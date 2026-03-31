@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MQTT Dashboard — Node-RED</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0d1117;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e6edf3;
+    }
+
+    /* ── NAV ─────────────────────────────────────────────────── */
+    nav {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 14px; color: #fff;
+    }
+    nav h1 { font-size: 16px; font-weight: 600; flex: 1; }
+
+    .nav-link {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      transition: background .2s, color .2s;
+    }
+    .nav-link:hover { background: #21262d; color: #e6edf3; }
+    .nav-link.primary {
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-link.primary:hover { opacity: .85; }
+
+    #userLabel { font-size: 13px; color: #8b949e; }
+
+    /* ── STATUS ──────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 24px;
+      background: #0d1117;
+      border-bottom: 1px solid #21262d;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #484f58;
+      transition: background .3s;
+    }
+    .dot.connected { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .dot.connecting { background: #e3b341; }
+    .dot.error { background: #f85149; }
+
+    /* ── MAIN GRID ───────────────────────────────────────────── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 700px) { .container { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: #8b949e;
+    }
+    .panel-body { padding: 18px; }
+
+    /* ── PUBLISH ─────────────────────────────────────────────── */
+    .input-row {
+      display: flex; gap: 8px; margin-bottom: 10px;
+    }
+    .input-row input, .input-row textarea {
+      flex: 1;
+      padding: 9px 12px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .2s;
+      font-family: inherit;
+    }
+    .input-row input:focus, .input-row textarea:focus { border-color: #f06000; }
+    .input-row textarea { resize: vertical; min-height: 60px; }
+
+    .btn-pub {
+      padding: 9px 18px;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border: none; border-radius: 6px;
+      color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: opacity .2s;
+    }
+    .btn-pub:hover { opacity: .85; }
+    .btn-pub:disabled { opacity: .4; cursor: not-allowed; }
+
+    .quick-btns {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .quick-btn {
+      padding: 5px 10px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      color: #8b949e;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .quick-btn:hover { background: #30363d; color: #e6edf3; }
+
+    /* ── SUBSCRIBE / LOG ─────────────────────────────────────── */
+    .sub-row {
+      display: flex; gap: 8px; margin-bottom: 14px;
+    }
+    .sub-row input { flex: 1; padding: 9px 12px; background: #0d1117;
+      border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 13px; outline: none;
+      transition: border-color .2s; }
+    .sub-row input:focus { border-color: #f06000; }
+    .btn-sub {
+      padding: 9px 14px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .btn-sub:hover { background: #30363d; }
+
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .tag {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 8px;
+      background: rgba(240,96,0,.12);
+      border: 1px solid rgba(240,96,0,.3);
+      border-radius: 20px;
+      font-size: 11px;
+      color: #f06000;
+    }
+    .tag .rm { cursor: pointer; opacity: .7; font-size: 14px; line-height: 1; }
+    .tag .rm:hover { opacity: 1; }
+
+    /* ── LOG ─────────────────────────────────────────────────── */
+    .log {
+      height: 260px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .log-entry { display: flex; gap: 8px; margin-bottom: 2px; }
+    .log-time { color: #484f58; white-space: nowrap; }
+    .log-topic { color: #f06000; }
+    .log-payload { color: #a5d6ff; word-break: break-all; }
+    .log-empty { color: #484f58; text-align: center; padding-top: 100px; }
+
+    .btn-clear {
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      color: #8b949e;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-clear:hover { background: #21262d; color: #e6edf3; }
+
+    /* ── FULL-WIDTH PANEL ─────────────────────────────────────── */
+    .full { grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">NR</div>
+  <h1>MQTT Dashboard</h1>
+  <span id="userLabel">…</span>
+  <a href="/dashboard" class="nav-link">Дашборд</a>
+  <a href="/admin" id="adminLink" class="nav-link" style="display:none">Адмін</a>
+  <a href="/editor" id="editorLink" class="nav-link primary" style="display:none">Редактор</a>
+  <form action="/logout" method="post" style="display:inline">
+    <button type="submit" class="nav-link" style="background:none;border:1px solid #30363d;cursor:pointer">Вийти</button>
+  </form>
+</nav>
+
+<div class="status-bar">
+  <span class="dot" id="dot"></span>
+  <span id="statusText">Підключення…</span>
+  <span style="margin-left:auto">Брокер: <code>ws://localhost:3000/mqtt</code></span>
+</div>
+
+<div class="container">
+
+  <!-- Publish panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Публікація</span>
+    </div>
+    <div class="panel-body">
+      <div class="input-row">
+        <input id="pubTopic" placeholder="topic (напр. test/hello)" value="test/hello" />
+      </div>
+      <div class="input-row">
+        <textarea id="pubPayload" placeholder="Повідомлення…">Hello MQTT!</textarea>
+        <button class="btn-pub" id="pubBtn" disabled>Надіслати</button>
+      </div>
+      <div class="quick-btns">
+        <span class="panel-title" style="font-size:11px;color:#484f58;width:100%;margin-bottom:2px">Швидкі повідомлення:</span>
+        <button class="quick-btn" data-topic="test/hello" data-payload="Hello!">Hello!</button>
+        <button class="quick-btn" data-topic="test/sensor" data-payload='{"temp":22.5,"hum":60}'>Датчик JSON</button>
+        <button class="quick-btn" data-topic="test/led" data-payload="ON">LED ON</button>
+        <button class="quick-btn" data-topic="test/led" data-payload="OFF">LED OFF</button>
+        <button class="quick-btn" data-topic="test/ping" data-payload="ping">Ping</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subscribe panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Підписки</span>
+    </div>
+    <div class="panel-body">
+      <div class="sub-row">
+        <input id="subInput" placeholder="topic або # для всіх" value="test/#" />
+        <button class="btn-sub" id="subBtn">Підписатись</button>
+      </div>
+      <div class="tags" id="tags"></div>
+    </div>
+  </div>
+
+  <!-- Log panel -->
+  <div class="panel full">
+    <div class="panel-header">
+      <span class="panel-title">Отримані повідомлення</span>
+      <button class="btn-clear" id="clearBtn">Очистити</button>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="log" id="log">
+        <div class="log-empty">Повідомлення з'являться тут після підписки</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- mqtt.js from CDN -->
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+// ── UI refs ──────────────────────────────────────────────────────────────────
+const dot         = document.getElementById('dot');
+const statusText  = document.getElementById('statusText');
+const pubBtn      = document.getElementById('pubBtn');
+const pubTopic    = document.getElementById('pubTopic');
+const pubPayload  = document.getElementById('pubPayload');
+const subInput    = document.getElementById('subInput');
+const subBtn      = document.getElementById('subBtn');
+const tagsEl      = document.getElementById('tags');
+const logEl       = document.getElementById('log');
+const clearBtn    = document.getElementById('clearBtn');
+const userLabel   = document.getElementById('userLabel');
+
+// ── Load user ────────────────────────────────────────────────────────────────
+fetch('/api/me').then(r => r.json()).then(d => {
+  userLabel.textContent = `Користувач: ${d.username}`;
+  if (d.role === 'admin') {
+    document.getElementById('adminLink').style.display = '';
+    document.getElementById('editorLink').style.display = '';
+  }
+});
+
+// ── MQTT connection ──────────────────────────────────────────────────────────
+const proto  = location.protocol === 'https:' ? 'wss' : 'ws';
+const url    = `${proto}://${location.host}/mqtt`;
+const client = mqtt.connect(url, {
+  clientId: 'dashboard_' + Math.random().toString(16).slice(2, 8),
+  clean: true,
+  reconnectPeriod: 3000
+});
+
+function setStatus(state, text) {
+  dot.className = 'dot ' + state;
+  statusText.textContent = text;
+}
+
+client.on('connect', () => {
+  setStatus('connected', 'Підключено до брокера');
+  pubBtn.disabled = false;
+  // auto-subscribe to current tags
+  subscriptions.forEach(t => client.subscribe(t));
+});
+
+client.on('reconnect', () => setStatus('connecting', 'Перепідключення…'));
+client.on('error',    (e) => setStatus('error', 'Помилка: ' + e.message));
+client.on('offline',  ()  => setStatus('', 'Офлайн'));
+
+client.on('message', (topic, payload) => {
+  logMessage(topic, payload.toString());
+});
+
+// ── Subscriptions ────────────────────────────────────────────────────────────
+let subscriptions = [];
+
+function renderTags() {
+  tagsEl.innerHTML = '';
+  subscriptions.forEach(t => {
+    const el = document.createElement('span');
+    el.className = 'tag';
+    el.innerHTML = `${t} <span class="rm" data-t="${t}">×</span>`;
+    el.querySelector('.rm').addEventListener('click', () => unsubscribe(t));
+    tagsEl.appendChild(el);
+  });
+}
+
+function subscribe(topic) {
+  if (!topic || subscriptions.includes(topic)) return;
+  subscriptions.push(topic);
+  if (client.connected) client.subscribe(topic);
+  renderTags();
+}
+
+function unsubscribe(topic) {
+  subscriptions = subscriptions.filter(t => t !== topic);
+  if (client.connected) client.unsubscribe(topic);
+  renderTags();
+}
+
+subBtn.addEventListener('click', () => {
+  const t = subInput.value.trim();
+  if (t) { subscribe(t); subInput.value = ''; }
+});
+subInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') subBtn.click();
+});
+
+// default subscription
+subscribe('test/#');
+
+// ── Publish ──────────────────────────────────────────────────────────────────
+pubBtn.addEventListener('click', () => {
+  const t = pubTopic.value.trim();
+  const p = pubPayload.value;
+  if (!t) return;
+  client.publish(t, p, { qos: 0 });
+});
+
+pubPayload.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.ctrlKey) pubBtn.click();
+});
+
+document.querySelectorAll('.quick-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    pubTopic.value   = btn.dataset.topic;
+    pubPayload.value = btn.dataset.payload;
+    if (client.connected) pubBtn.click();
+  });
+});
+
+// ── Log ──────────────────────────────────────────────────────────────────────
+let logCount = 0;
+
+function logMessage(topic, payload) {
+  if (logCount === 0) logEl.innerHTML = '';
+  logCount++;
+
+  const now = new Date().toLocaleTimeString('uk-UA', { hour12: false });
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML =
+    `<span class="log-time">${now}</span>` +
+    `<span class="log-topic">${escHtml(topic)}</span>` +
+    `<span class="log-payload">${escHtml(payload)}</span>`;
+  logEl.appendChild(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+
+  // keep max 200 entries
+  while (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+}
+
+clearBtn.addEventListener('click', () => {
+  logEl.innerHTML = '<div class="log-empty">Повідомлення з\'являться тут після підписки</div>';
+  logCount = 0;
+});
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# Cloudflare Zero Trust Tunnel — конфіг для Node-RED MQTT
+#
+# Як отримати TUNNEL_ID і credentials:
+#   cloudflared tunnel create mqtttest
+#   → виведе TUNNEL_ID та збереже credentials в ~/.cloudflared/
+#
+# Розмістіть цей файл:
+#   /home/pi/.cloudflared/config.yml
+#
+# ════════════════════════════════════════════════════════════════
+# Замініть:
+#   <TUNNEL_ID>       → ваш UUID тунелю  (напр. a1b2c3d4-xxxx)
+#   your-domain.com   → ваш домен в Cloudflare DNS
+# ════════════════════════════════════════════════════════════════
+
+tunnel: <TUNNEL_ID>
+credentials-file: /home/pi/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # ── Варіант A: cloudflared → Apache :80 → Node.js :3000 ─────────────────
+  # (рекомендовано — Apache логує, кешує статику, зручніше керувати)
+  - hostname: your-domain.com
+    service: http://127.0.0.1:80
+    originRequest:
+      # WebSocket підтримується автоматично — додаткових налаштувань не треба
+      connectTimeout: 30s
+      keepAliveTimeout: 90s
+      keepAliveConnections: 100
+
+  # ── Варіант B: cloudflared → Node.js :3000 напряму ──────────────────────
+  # (простіше — розкоментуйте блок нижче і закоментуйте Варіант A)
+  #
+  # - hostname: your-domain.com
+  #   service: http://127.0.0.1:3000
+  #   originRequest:
+  #     connectTimeout: 30s
+
+  # Обов'язковий catch-all (повертає 404 для невідомих хостів)
+  - service: http_status:404

@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "aedes": "^0.51.3",
+    "node": "^25.7.0",
+    "node-red": "^4.1.6",
+    "websocket-stream": "^5.5.2"
+  }
+}

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Адмін-панель</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0d1117;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e6edf3;
+    }
+
+    /* ── NAV ────────────────────────────────────────────────── */
+    nav {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-logo {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 14px; color: #fff;
+    }
+    nav h1 { font-size: 16px; font-weight: 600; flex: 1; }
+    .nav-link {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      transition: background .2s, color .2s;
+    }
+    .nav-link:hover { background: #21262d; color: #e6edf3; }
+    .nav-link.primary {
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+    .nav-link.primary:hover { opacity: .85; }
+
+    /* ── MAIN ───────────────────────────────────────────────── */
+    .container {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+
+    .page-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: #e6edf3;
+    }
+
+    /* ── TABLE ──────────────────────────────────────────────── */
+    .table-wrap {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead {
+      background: #21262d;
+    }
+
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #21262d;
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    .username-cell {
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .date-cell {
+      color: #8b949e;
+      font-size: 12px;
+    }
+
+    /* ── ROLE BADGE ─────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    .badge-admin {
+      background: rgba(240,96,0,.15);
+      border: 1px solid rgba(240,96,0,.35);
+      color: #f06000;
+    }
+    .badge-user {
+      background: rgba(63,185,80,.1);
+      border: 1px solid rgba(63,185,80,.3);
+      color: #3fb950;
+    }
+
+    /* ── ACTIONS ────────────────────────────────────────────── */
+    .actions { display: flex; gap: 8px; }
+
+    .btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #30363d;
+      transition: background .2s, color .2s, opacity .2s;
+    }
+    .btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    .btn-promote {
+      background: rgba(240,96,0,.1);
+      border-color: rgba(240,96,0,.35);
+      color: #f06000;
+    }
+    .btn-promote:hover:not(:disabled) { background: rgba(240,96,0,.22); }
+
+    .btn-demote {
+      background: rgba(63,185,80,.08);
+      border-color: rgba(63,185,80,.3);
+      color: #3fb950;
+    }
+    .btn-demote:hover:not(:disabled) { background: rgba(63,185,80,.18); }
+
+    .btn-delete {
+      background: rgba(248,81,73,.08);
+      border-color: rgba(248,81,73,.3);
+      color: #f85149;
+    }
+    .btn-delete:hover:not(:disabled) { background: rgba(248,81,73,.18); }
+
+    /* ── TOAST ──────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; }
+    #toast.ok  { background: #1f6331; border: 1px solid #2ea043; color: #aff2be; }
+    #toast.err { background: #5c1a1a; border: 1px solid #f85149; color: #ffa5a0; }
+
+    /* ── LOADING ────────────────────────────────────────────── */
+    .loading {
+      text-align: center;
+      padding: 48px;
+      color: #8b949e;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">NR</div>
+  <h1>Адмін-панель</h1>
+  <a href="/dashboard" class="nav-link">Дашборд</a>
+  <a href="/admin" class="nav-link">Адмін</a>
+  <a href="/editor" class="nav-link primary">Редактор</a>
+  <form action="/logout" method="post" style="display:inline">
+    <button type="submit" class="nav-link" style="background:none;border:1px solid #30363d;cursor:pointer">Вийти</button>
+  </form>
+</nav>
+
+<div class="container">
+  <div class="page-title">Управління користувачами</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Користувач</th>
+          <th>Роль</th>
+          <th>Дата реєстрації</th>
+          <th>Дії</th>
+        </tr>
+      </thead>
+      <tbody id="usersBody">
+        <tr><td colspan="4" class="loading">Завантаження…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let currentUser = null;
+
+async function loadMe() {
+  const r = await fetch('/api/me');
+  if (!r.ok) { location.href = '/login'; return; }
+  currentUser = await r.json();
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('uk-UA', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = ''; }, 3000);
+}
+
+async function setRole(username, role, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/users/${encodeURIComponent(username)}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role })
+    });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || 'Помилка', 'err'); btn.disabled = false; return; }
+    showToast(`Роль ${username} змінено на «${role}»`, 'ok');
+    renderUsers();
+  } catch {
+    showToast('Помилка мережі', 'err');
+    btn.disabled = false;
+  }
+}
+
+async function deleteUser(username, btn) {
+  if (!confirm(`Видалити користувача «${username}»?`)) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+    const data = await r.json();
+    if (!r.ok) { showToast(data.error || 'Помилка', 'err'); btn.disabled = false; return; }
+    showToast(`Користувача «${username}» видалено`, 'ok');
+    renderUsers();
+  } catch {
+    showToast('Помилка мережі', 'err');
+    btn.disabled = false;
+  }
+}
+
+async function renderUsers() {
+  const tbody = document.getElementById('usersBody');
+  tbody.innerHTML = '<tr><td colspan="4" class="loading">Завантаження…</td></tr>';
+
+  const r = await fetch('/api/users');
+  if (!r.ok) {
+    tbody.innerHTML = '<tr><td colspan="4" class="loading" style="color:#f85149">Помилка завантаження</td></tr>';
+    return;
+  }
+
+  const users = await r.json();
+  if (users.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="loading">Немає користувачів</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  users.forEach(u => {
+    const isSelf = u.username === currentUser.username;
+    const isAdmin = u.role === 'admin';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="username-cell">${escHtml(u.username)}${isSelf ? ' <span style="font-size:10px;color:#8b949e">(ви)</span>' : ''}</td>
+      <td><span class="badge ${isAdmin ? 'badge-admin' : 'badge-user'}">${isAdmin ? 'Адмін' : 'Користувач'}</span></td>
+      <td class="date-cell">${formatDate(u.createdAt)}</td>
+      <td class="actions"></td>
+    `;
+
+    const actions = tr.querySelector('.actions');
+
+    if (!isSelf) {
+      if (!isAdmin) {
+        const promoteBtn = document.createElement('button');
+        promoteBtn.className = 'btn btn-promote';
+        promoteBtn.textContent = 'Зробити адміном';
+        promoteBtn.addEventListener('click', () => setRole(u.username, 'admin', promoteBtn));
+        actions.appendChild(promoteBtn);
+      } else {
+        const demoteBtn = document.createElement('button');
+        demoteBtn.className = 'btn btn-demote';
+        demoteBtn.textContent = 'Зробити юзером';
+        demoteBtn.addEventListener('click', () => setRole(u.username, 'user', demoteBtn));
+        actions.appendChild(demoteBtn);
+      }
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-delete';
+      delBtn.textContent = 'Видалити';
+      delBtn.addEventListener('click', () => deleteUser(u.username, delBtn));
+      actions.appendChild(delBtn);
+    } else {
+      actions.innerHTML = '<span style="font-size:12px;color:#484f58">—</span>';
+    }
+
+    tbody.appendChild(tr);
+  });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+(async () => {
+  await loadMe();
+  await renderUsers();
+})();
+</script>
+</body>
+</html>

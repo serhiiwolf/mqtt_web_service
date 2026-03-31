@@ -1,0 +1,26 @@
+# Systemd service для Node-RED MQTT App
+# Скопіюйте: /etc/systemd/system/mqtttest.service
+#
+# Замініть:
+#   /home/pi/mqtttest  → ваш шлях до проекту
+#   pi                 → ваш username (whoami)
+
+[Unit]
+Description=Node-RED MQTT App
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/mqtttest
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=mqtttest
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
