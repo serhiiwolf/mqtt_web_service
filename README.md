@@ -222,28 +222,6 @@ Dashboard на /dashboard дозволяє:
 - Додати резервне копіювання users.json і .node-red/flows.json
 - Додати TLS для MQTT TCP (або лишити TCP лише локально)
 
-## Підготовка до public GitHub
-
-Перед зміною visibility на public перевірте:
-
-1. У репозиторії немає реальних `.env`, cloudflared credentials, ключів (`.pem`, `.key`).
-2. `users.json` не відстежується git і не міститься в історії комітів.
-3. У `server.js` немає хардкод-секретів (використовуються env).
-4. `node_modules` не відстежується git.
-
-Швидкі команди перевірки:
-
-```bash
-git ls-files | Select-String -Pattern '(^users\.json$|^\.env|^node_modules/|\.pem$|\.key$|^\.cloudflared/)'
-```
-
-Якщо щось зайве вже в індексі, прибрати з відстеження:
-
-```bash
-git rm -r --cached node_modules users.json .env .cloudflared
-git commit -m "chore: remove sensitive/local files from tracking"
-```
-
 ## Нотатки
 
 - Сервер слухає 127.0.0.1:3000, тобто доступний локально або через reverse proxy.
