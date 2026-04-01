@@ -30,7 +30,12 @@ mqttServer.listen(1883, () => {
 // WebSocket MQTT  (ws://localhost:3000/mqtt) — for browser clients
 const wssServer = new ws.Server({ server, path: '/mqtt' });
 wssServer.on('connection', (socket) => {
-  const stream = websocketStream(socket, { objectMode: true });
+  // MQTT over WebSocket must stay in binary mode.
+  // objectMode may corrupt MQTT frames and cause disconnects after publish.
+  const stream = websocketStream(socket, { binary: true });
+  socket.on('error', (err) => {
+    console.warn('[MQTT][WS] socket error:', err.message);
+  });
   aedes.handle(stream);
 });
 
