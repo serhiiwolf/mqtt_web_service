@@ -215,6 +215,43 @@
     }
     .btn-clear:hover { background: #21262d; color: #e6edf3; }
 
+    .history {
+      height: 220px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .history-entry { display: flex; gap: 8px; margin-bottom: 2px; }
+    .history-time { color: #484f58; white-space: nowrap; }
+    .history-type.connect { color: #3fb950; }
+    .history-type.disconnect { color: #f85149; }
+    .history-type.publish { color: #f06000; }
+    .history-text { color: #a5d6ff; word-break: break-all; }
+
+    .history-controls {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      border-bottom: 1px solid #21262d;
+      background: #11161d;
+    }
+    .history-filter, .history-search {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      outline: none;
+    }
+    .history-filter:focus, .history-search:focus { border-color: #f06000; }
+    .history-search { flex: 1; }
+
     /* ── FULL-WIDTH PANEL ─────────────────────────────────────── */
     .full { grid-column: 1 / -1; }
   </style>
@@ -282,6 +319,27 @@
   <!-- Log panel -->
   <div class="panel full">
     <div class="panel-header">
+      <span class="panel-title">Історія брокера (останні 50)</span>
+      <button class="btn-clear" id="historyRefreshBtn">Оновити</button>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div class="history-controls">
+        <select id="historyTypeFilter" class="history-filter">
+          <option value="all">Усі події</option>
+          <option value="connect">Підключення</option>
+          <option value="disconnect">Відключення</option>
+          <option value="publish">Publish</option>
+        </select>
+        <input id="historySearch" class="history-search" placeholder="Пошук: clientId, topic, payload" />
+      </div>
+      <div class="history" id="history">
+        <div class="log-empty">Історія завантажується…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel full">
+    <div class="panel-header">
       <span class="panel-title">Отримані повідомлення</span>
       <button class="btn-clear" id="clearBtn">Очистити</button>
     </div>
@@ -309,6 +367,10 @@ const tagsEl      = document.getElementById('tags');
 const logEl       = document.getElementById('log');
 const clearBtn    = document.getElementById('clearBtn');
 const userLabel   = document.getElementById('userLabel');
+const historyEl   = document.getElementById('history');
+const historyRefreshBtn = document.getElementById('historyRefreshBtn');
+const historyTypeFilter = document.getElementById('historyTypeFilter');
+const historySearch = document.getElementById('historySearch');
 
 // ── Load user ────────────────────────────────────────────────────────────────
 fetch('/api/me').then(r => r.json()).then(d => {
@@ -317,6 +379,7 @@ fetch('/api/me').then(r => r.json()).then(d => {
     document.getElementById('adminLink').style.display = '';
     document.getElementById('editorLink').style.display = '';
   }
+  loadMqttHistory();
 });
 
 // ── MQTT connection ──────────────────────────────────────────────────────────
@@ -408,6 +471,7 @@ document.querySelectorAll('.quick-btn').forEach(btn => {
 
 // ── Log ──────────────────────────────────────────────────────────────────────
 let logCount = 0;
+let historyItems = [];
 
 function logMessage(topic, payload) {
   if (logCount === 0) logEl.innerHTML = '';
@@ -435,6 +499,66 @@ clearBtn.addEventListener('click', () => {
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+function formatHistoryText(item) {
+  if (item.type === 'connect') return `Підключився: ${item.clientId}`;
+  if (item.type === 'disconnect') return `Відключився: ${item.clientId}`;
+  if (item.type === 'publish') {
+    return `${item.clientId} -> ${item.topic}: ${item.payload || ''}`;
+  }
+  return JSON.stringify(item);
+}
+
+function renderHistory(items) {
+  const typeFilter = historyTypeFilter.value;
+  const q = historySearch.value.trim().toLowerCase();
+  const filtered = items.filter(item => {
+    if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+    if (!q) return true;
+    const searchable = [
+      item.type || '',
+      item.clientId || '',
+      item.topic || '',
+      item.payload || ''
+    ].join(' ').toLowerCase();
+    return searchable.includes(q);
+  });
+
+  if (!filtered.length) {
+    historyEl.innerHTML = '<div class="log-empty">Поки немає подій брокера</div>';
+    return;
+  }
+
+  historyEl.innerHTML = '';
+  filtered.forEach(item => {
+    const entry = document.createElement('div');
+    entry.className = 'history-entry';
+    const ts = new Date(item.ts).toLocaleTimeString('uk-UA', { hour12: false });
+    entry.innerHTML =
+      `<span class="history-time">${escHtml(ts)}</span>` +
+      `<span class="history-type ${escHtml(item.type)}">${escHtml(item.type)}</span>` +
+      `<span class="history-text">${escHtml(formatHistoryText(item))}</span>`;
+    historyEl.appendChild(entry);
+  });
+  historyEl.scrollTop = 0;
+}
+
+async function loadMqttHistory() {
+  try {
+    const res = await fetch('/api/mqtt/logs');
+    if (!res.ok) return;
+    const data = await res.json();
+    historyItems = Array.isArray(data.items) ? data.items : [];
+    renderHistory(historyItems);
+  } catch (_) {
+    historyEl.innerHTML = '<div class="log-empty">Не вдалося завантажити історію</div>';
+  }
+}
+
+historyRefreshBtn.addEventListener('click', loadMqttHistory);
+historyTypeFilter.addEventListener('change', () => renderHistory(historyItems));
+historySearch.addEventListener('input', () => renderHistory(historyItems));
+setInterval(loadMqttHistory, 5000);
 </script>
 </body>
 </html>

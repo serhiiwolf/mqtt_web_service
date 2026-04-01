@@ -20,6 +20,22 @@ const server = http.createServer(app);
 
 // ── MQTT Broker ────────────────────────────────────────────────────────────────
 const aedes = Aedes();
+const mqttEventLog = [];
+const MQTT_EVENT_LOG_LIMIT = 50;
+
+function pushMqttEvent(event) {
+  mqttEventLog.push({
+    ts: new Date().toISOString(),
+    ...event
+  });
+  while (mqttEventLog.length > MQTT_EVENT_LOG_LIMIT) mqttEventLog.shift();
+}
+
+function clipPayload(payload, maxLen = 200) {
+  if (payload == null) return '';
+  const asString = String(payload);
+  return asString.length > maxLen ? `${asString.slice(0, maxLen)}…` : asString;
+}
 
 // TCP MQTT  (mqtt://localhost:1883)
 const mqttServer = net.createServer(aedes.handle);
@@ -40,13 +56,21 @@ wssServer.on('connection', (socket) => {
 });
 
 aedes.on('client', (client) => {
+  pushMqttEvent({ type: 'connect', clientId: client.id || 'unknown' });
   console.log(`[MQTT] client connected: ${client.id}`);
 });
 aedes.on('clientDisconnect', (client) => {
+  pushMqttEvent({ type: 'disconnect', clientId: client.id || 'unknown' });
   console.log(`[MQTT] client disconnected: ${client.id}`);
 });
 aedes.on('publish', (packet, client) => {
   if (client) {
+    pushMqttEvent({
+      type: 'publish',
+      clientId: client.id || 'unknown',
+      topic: packet.topic,
+      payload: clipPayload(packet.payload && packet.payload.toString())
+    });
     console.log(`[MQTT] ${packet.topic}: ${packet.payload.toString()}`);
   }
 });
@@ -159,6 +183,14 @@ app.get('/api/me', (req, res) => {
   if (req.session.user) return res.json(req.session.user);
   res.status(401).json({ error: 'not authenticated' });
 });
+
+app.get('/api/mqtt/logs', (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ error: 'not authenticated' });
+  }
+  res.json({ items: mqttEventLog.slice(-MQTT_EVENT_LOG_LIMIT).reverse() });
+});
+
 // ── Admin middleware ──────────────────────────────────────────────────────────
 function requireAdmin(req, res, next) {
   if (req.session && req.session.user && req.session.user.role === 'admin') return next();
