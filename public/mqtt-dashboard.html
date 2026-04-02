@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MQTT Sensors Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #e6edf3;
+      padding-bottom: 40px;
+    }
+
+    /* ── NAV ──────────────────────────────────────────────────── */
+    nav {
+      background: linear-gradient(90deg, #161b22 0%, #21262d 100%);
+      border-bottom: 2px solid #30363d;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .nav-logo {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 16px;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(240, 96, 0, 0.3);
+    }
+
+    nav h1 {
+      font-size: 18px;
+      font-weight: 700;
+      flex: 1;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-items {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .nav-link {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-link:hover {
+      background: #21262d;
+      color: #e6edf3;
+      border-color: #f06000;
+    }
+
+    .nav-link.logout {
+      background: rgba(240, 96, 0, 0.1);
+      border-color: #f06000;
+      color: #f06000;
+    }
+
+    .nav-link.logout:hover {
+      background: #f06000;
+      color: #fff;
+    }
+
+    #userLabel {
+      font-size: 13px;
+      color: #8b949e;
+      padding: 0 8px;
+      border-right: 1px solid #30363d;
+    }
+
+    /* ── STATUS ──────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 24px;
+      background: #0d1117;
+      border-bottom: 1px solid #21262d;
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #484f58;
+      transition: all 0.3s;
+      box-shadow: 0 0 0 0 rgba(72, 79, 88, 0.4);
+    }
+
+    .dot.connected {
+      background: #3fb950;
+      box-shadow: 0 0 10px rgba(63, 185, 80, 0.6);
+      animation: pulse 2s infinite;
+    }
+
+    .dot.connecting {
+      background: #e3b341;
+      box-shadow: 0 0 10px rgba(227, 179, 65, 0.6);
+    }
+
+    .dot.error {
+      background: #f85149;
+      box-shadow: 0 0 10px rgba(248, 81, 73, 0.6);
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); }
+    }
+
+    /* ── MAIN CONTAINER ──────────────────────────────────────── */
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .header-section {
+      margin-bottom: 32px;
+    }
+
+    .header-section h2 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #e6edf3;
+    }
+
+    .header-section p {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    /* ── SENSORS GRID ────────────────────────────────────────── */
+    .sensors-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .sensor-card {
+      background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+      border: 2px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .sensor-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #f06000, #e03030);
+      transform: scaleX(0);
+      transition: transform 0.3s;
+      transform-origin: left;
+    }
+
+    .sensor-card:hover {
+      border-color: #f06000;
+      box-shadow: 0 8px 24px rgba(240, 96, 0, 0.15);
+      transform: translateY(-4px);
+    }
+
+    .sensor-card:hover::before {
+      transform: scaleX(1);
+    }
+
+    .sensor-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 16px;
+      background: rgba(240, 96, 0, 0.1);
+      border: 1px solid rgba(240, 96, 0, 0.2);
+    }
+
+    .sensor-name {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #8b949e;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .sensor-value {
+      font-size: 36px;
+      font-weight: 700;
+      color: #e6edf3;
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+
+    .sensor-unit {
+      font-size: 14px;
+      color: #8b949e;
+      margin-bottom: 12px;
+    }
+
+    .sensor-status {
+      font-size: 11px;
+      color: #8b949e;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #484f58;
+    }
+
+    .sensor-card.active .status-dot {
+      background: #3fb950;
+      box-shadow: 0 0 6px #3fb950;
+    }
+
+    /* ── CHART SECTION ───────────────────────────────────────── */
+    .chart-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 32px;
+    }
+
+    .chart-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #8b949e;
+      margin-bottom: 16px;
+    }
+
+    .chart-canvas {
+      width: 100%;
+      max-width: 100%;
+      height: 300px;
+      background: #0d1117;
+      border-radius: 8px;
+      border: 1px solid #21262d;
+      padding: 10px;
+    }
+
+    /* ── LOGS SECTION ────────────────────────────────────────── */
+    .logs-section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+
+    .logs-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #8b949e;
+      margin-bottom: 16px;
+    }
+
+    .logs-container {
+      max-height: 300px;
+      overflow-y: auto;
+      background: #0d1117;
+      border-radius: 8px;
+      border: 1px solid #21262d;
+      padding: 0;
+    }
+
+    .log-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+
+    .log-item:last-child {
+      border-bottom: none;
+    }
+
+    .log-item:hover {
+      background: #21262d;
+    }
+
+    .log-time {
+      color: #8b949e;
+      min-width: 100px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .log-topic {
+      color: #f06000;
+      min-width: 160px;
+      font-weight: 600;
+    }
+
+    .log-value {
+      color: #3fb950;
+      flex: 1;
+    }
+
+    /* ── SCROLLBAR ───────────────────────────────────────────── */
+    .logs-container::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .logs-container::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+
+    .logs-container::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 3px;
+    }
+
+    .logs-container::-webkit-scrollbar-thumb:hover {
+      background: #484f58;
+    }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sensors-grid {
+        grid-template-columns: 1fr;
+      }
+
+      nav {
+        padding: 0 16px;
+        height: 50px;
+      }
+
+      nav h1 {
+        display: none;
+      }
+
+      .container {
+        padding: 16px 12px;
+      }
+
+      .sensor-value {
+        font-size: 28px;
+      }
+
+      .header-section h2 {
+        font-size: 20px;
+      }
+    }
+
+    .no-data {
+      text-align: center;
+      color: #8b949e;
+      padding: 32px 16px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <!-- ── NAVBAR ─────────────────────────────────────────────────────── -->
+  <nav>
+    <div class="nav-logo">📊</div>
+    <h1>MQTT Sensors Monitor</h1>
+    <div class="nav-items">
+      <span id="userLabel"></span>
+      <a href="/admin" class="nav-link">Admin</a>
+      <button onclick="logout()" class="nav-link logout">Logout</button>
+    </div>
+  </nav>
+
+  <!-- ── STATUS BAR ────────────────────────────────────────────────── -->
+  <div class="status-bar">
+    <div class="dot" id="statusDot"></div>
+    <span id="statusText">Connecting...</span>
+  </div>
+
+  <!-- ── MAIN CONTENT ──────────────────────────────────────────────── -->
+  <div class="container">
+    <div class="header-section">
+      <h2>Цифрові Сенсори</h2>
+      <p>Моніторинг даних в режимі реального часу</p>
+    </div>
+
+    <!-- ── SENSOR CARDS ─────────────────────────────────────────── -->
+    <div class="sensors-grid">
+      <div class="sensor-card" id="card-temp">
+        <div class="sensor-icon">🌡️</div>
+        <div class="sensor-name">Температура</div>
+        <div class="sensor-value" id="value-temp">--</div>
+        <div class="sensor-unit">°C</div>
+        <div class="sensor-status">
+          <div class="status-dot"></div>
+          <span id="status-temp">Очікування...</span>
+        </div>
+      </div>
+
+      <div class="sensor-card" id="card-humidity">
+        <div class="sensor-icon">💧</div>
+        <div class="sensor-name">Вологість</div>
+        <div class="sensor-value" id="value-humidity">--</div>
+        <div class="sensor-unit">%</div>
+        <div class="sensor-status">
+          <div class="status-dot"></div>
+          <span id="status-humidity">Очікування...</span>
+        </div>
+      </div>
+
+      <div class="sensor-card" id="card-pressure">
+        <div class="sensor-icon">📈</div>
+        <div class="sensor-name">Тиск</div>
+        <div class="sensor-value" id="value-pressure">--</div>
+        <div class="sensor-unit">hPa</div>
+        <div class="sensor-status">
+          <div class="status-dot"></div>
+          <span id="status-pressure">Очікування...</span>
+        </div>
+      </div>
+
+      <div class="sensor-card" id="card-altitude">
+        <div class="sensor-icon">⬆️</div>
+        <div class="sensor-name">Висота</div>
+        <div class="sensor-value" id="value-altitude">--</div>
+        <div class="sensor-unit">м</div>
+        <div class="sensor-status">
+          <div class="status-dot"></div>
+          <span id="status-altitude">Очікування...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LOGS SECTION ──────────────────────────────────────────── -->
+    <div class="logs-section">
+      <div class="logs-title">📋 Останні Оновлення</div>
+      <div class="logs-container" id="logsContainer">
+        <div class="no-data">Очікування даних...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MQTT.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.0.0/dist/mqtt.min.js"></script>
+
+  <script>
+    // ── MQTT Connection Setup ────────────────────────────────────────
+    let mqttClient;
+    const topics = ['data/Temp', 'data/HUMIDITY', 'data/PRESSURE', 'data/ALTITUDE'];
+    const sensorData = {
+      'data/Temp': { value: null, unit: '°C', lastUpdate: null },
+      'data/HUMIDITY': { value: null, unit: '%', lastUpdate: null },
+      'data/PRESSURE': { value: null, unit: 'hPa', lastUpdate: null },
+      'data/ALTITUDE': { value: null, unit: 'м', lastUpdate: null }
+    };
+
+    const topicMap = {
+      'data/Temp': { element: 'temp', name: 'Temp' },
+      'data/HUMIDITY': { element: 'humidity', name: 'HUMIDITY' },
+      'data/PRESSURE': { element: 'pressure', name: 'PRESSURE' },
+      'data/ALTITUDE': { element: 'altitude', name: 'ALTITUDE' }
+    };
+
+    const logs = [];
+    const MAX_LOGS = 50;
+
+    // ── User Info ────────────────────────────────────────────────────
+    async function loadUserInfo() {
+      try {
+        const response = await fetch('/api/me');
+        const user = await response.json();
+        document.getElementById('userLabel').textContent = `${user.username} (${user.role})`;
+      } catch (err) {
+        console.error('Error loading user info:', err);
+        document.getElementById('userLabel').textContent = 'User';
+      }
+    }
+
+    function logout() {
+      fetch('/logout', { method: 'POST' })
+        .then(() => window.location.href = '/login')
+        .catch(err => console.error('Logout error:', err));
+    }
+
+    // ── MQTT Connection ─────────────────────────────────────────────
+    function connectMQTT() {
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsURL = `${protocol}//${window.location.host}/mqtt`;
+        
+        mqttClient = window.mqtt.connect(wsURL, {
+          clientId: `web-client-${Date.now()}`,
+          reconnectPeriod: 3000
+        });
+
+        mqttClient.on('connect', onConnect);
+        mqttClient.on('disconnect', onDisconnect);
+        mqttClient.on('message', onMessage);
+        mqttClient.on('error', onError);
+      } catch (err) {
+        console.error('MQTT connection error:', err);
+        updateStatus('error', 'Connection error');
+      }
+    }
+
+    function onConnect() {
+      console.log('Connected to MQTT broker');
+      updateStatus('connected', 'Connected to MQTT');
+      topics.forEach(topic => {
+        mqttClient.subscribe(topic, (err) => {
+          if (!err) console.log(`Subscribed to ${topic}`);
+        });
+      });
+    }
+
+    function onDisconnect() {
+      console.log('Disconnected from MQTT broker');
+      updateStatus('connecting', 'Reconnecting...');
+    }
+
+    function onMessage(topic, message) {
+      const payload = message.toString();
+      const timestamp = new Date();
+
+      // Update sensor data
+      if (sensorData[topic]) {
+        sensorData[topic].value = parseFloat(payload) || payload;
+        sensorData[topic].lastUpdate = timestamp;
+      }
+
+      // Update UI
+      if (topicMap[topic]) {
+        const mapping = topicMap[topic];
+        const valueElement = document.getElementById(`value-${mapping.element}`);
+        const statusElement = document.getElementById(`status-${mapping.element}`);
+        
+        if (valueElement) {
+          valueElement.textContent = sensorData[topic].value;
+          valueElement.parentElement.classList.add('active');
+        }
+        if (statusElement) {
+          statusElement.textContent = `${formatTime(timestamp)}`;
+        }
+
+        // Mark card as active
+        const card = document.getElementById(`card-${mapping.element}`);
+        if (card) card.classList.add('active');
+      }
+
+      // Add to logs
+      addLog(topic, payload, timestamp);
+
+      console.log(`[${topic}] ${payload}`);
+    }
+
+    function onError(error) {
+      console.error('MQTT Error:', error);
+      updateStatus('error', 'MQTT Error');
+    }
+
+    function updateStatus(state, message) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      
+      dot.className = `dot ${state}`;
+      text.textContent = message;
+    }
+
+    function addLog(topic, value, timestamp) {
+      logs.push({ topic, value, timestamp });
+      if (logs.length > MAX_LOGS) logs.shift();
+      renderLogs();
+    }
+
+    function renderLogs() {
+      const container = document.getElementById('logsContainer');
+      if (logs.length === 0) {
+        container.innerHTML = '<div class="no-data">Очікування даних...</div>';
+        return;
+      }
+
+      container.innerHTML = logs
+        .slice()
+        .reverse()
+        .map(log => `
+          <div class="log-item">
+            <span class="log-time">${formatTime(log.timestamp)}</span>
+            <span class="log-topic">${log.topic}</span>
+            <span class="log-value">${log.value}</span>
+          </div>
+        `)
+        .join('');
+    }
+
+    function formatTime(date) {
+      if (!(date instanceof Date)) date = new Date(date);
+      return date.toLocaleTimeString('uk-UA');
+    }
+
+    // ── Initialization ───────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      loadUserInfo();
+      connectMQTT();
+    });
+
+    // ── Graceful disconnect on page unload ──────────────────────────
+    window.addEventListener('beforeunload', () => {
+      if (mqttClient) mqttClient.end();
+    });
+  </script>
+</body>
+</html>

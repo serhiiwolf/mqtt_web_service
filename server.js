@@ -137,6 +137,11 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+app.get('/mqtt-dashboard', (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  res.sendFile(path.join(__dirname, 'public', 'mqtt-dashboard.html'));
+});
+
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password)
