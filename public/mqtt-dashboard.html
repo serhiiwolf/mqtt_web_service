@@ -559,9 +559,28 @@
       const payload = message.toString();
       const timestamp = new Date();
 
+      // Parse JSON payload if it exists
+      let sensorValue = payload;
+      try {
+        const jsonData = JSON.parse(payload);
+        // Extract value from "data" field if it exists
+        if (jsonData.data !== undefined) {
+          sensorValue = jsonData.data;
+        } else if (jsonData.value !== undefined) {
+          sensorValue = jsonData.value;
+        }
+      } catch (e) {
+        // If not JSON, use raw payload
+        sensorValue = payload;
+      }
+
+      // Convert to number if possible
+      const numericValue = parseFloat(sensorValue);
+      const displayValue = isNaN(numericValue) ? sensorValue : numericValue.toFixed(2);
+
       // Update sensor data
       if (sensorData[topic]) {
-        sensorData[topic].value = parseFloat(payload) || payload;
+        sensorData[topic].value = displayValue;
         sensorData[topic].lastUpdate = timestamp;
       }
 
@@ -572,7 +591,7 @@
         const statusElement = document.getElementById(`status-${mapping.element}`);
         
         if (valueElement) {
-          valueElement.textContent = sensorData[topic].value;
+          valueElement.textContent = displayValue;
           valueElement.parentElement.classList.add('active');
         }
         if (statusElement) {
@@ -585,9 +604,9 @@
       }
 
       // Add to logs
-      addLog(topic, payload, timestamp);
+      addLog(topic, displayValue, timestamp);
 
-      console.log(`[${topic}] ${payload}`);
+      console.log(`[${topic}] ${displayValue}`);
     }
 
     function onError(error) {
