@@ -134,7 +134,7 @@ const USERS_FILE = path.join(__dirname, 'users.json');
 
 function getLandingPathForRole(role) {
   if (role === 'admin') return '/editor';
-  if (role === 'viewer') return '/nodes/dashboard/page1';
+  if (role === 'viewer') return '/nodes/ui';
   return '/dashboard';
 }
 
@@ -389,7 +389,7 @@ server.listen(3000, '127.0.0.1', () => {
   console.log('');
   console.log('  App:          http://localhost:3000');
   console.log('  Dashboard:    http://localhost:3000/dashboard');
-  console.log('  Node-RED UI:  http://localhost:3000/nodes/dashboard/page1');
+  console.log('  Node-RED UI:  http://localhost:3000/nodes/ui');
   console.log('  Node-RED:     http://localhost:3000/editor');
   console.log('  MQTT:         mqtt://localhost:1883');
   console.log('  MQTT (WS):    ws://localhost:3000/mqtt');
