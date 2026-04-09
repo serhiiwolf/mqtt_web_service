@@ -132,6 +132,11 @@
       border: 1px solid rgba(63,185,80,.3);
       color: #3fb950;
     }
+    .badge-viewer {
+      background: rgba(57,198,255,.12);
+      border: 1px solid rgba(57,198,255,.3);
+      color: #39c6ff;
+    }
 
     /* ── ACTIONS ────────────────────────────────────────────── */
     .actions { display: flex; gap: 8px; }
@@ -201,6 +206,8 @@
   <div class="nav-logo">NR</div>
   <h1>Адмін-панель</h1>
   <a href="/dashboard" class="nav-link">Дашборд</a>
+  <a href="/nodes/dashboard/page1" class="nav-link">Дашборди</a>
+  <a href="/admin/mqtt-logs" class="nav-link">MQTT логи</a>
   <a href="/admin" class="nav-link">Адмін</a>
   <a href="/editor" class="nav-link primary">Редактор</a>
   <form action="/logout" method="post" style="display:inline">
@@ -273,6 +280,18 @@ async function setRole(username, role, btn) {
   }
 }
 
+function getRoleLabel(role) {
+  if (role === 'admin') return 'Адмін';
+  if (role === 'viewer') return 'Переглядач';
+  return 'Користувач';
+}
+
+function getRoleBadgeClass(role) {
+  if (role === 'admin') return 'badge-admin';
+  if (role === 'viewer') return 'badge-viewer';
+  return 'badge-user';
+}
+
 async function deleteUser(username, btn) {
   if (!confirm(`Видалити користувача «${username}»?`)) return;
   btn.disabled = true;
@@ -308,11 +327,12 @@ async function renderUsers() {
   users.forEach(u => {
     const isSelf = u.username === currentUser.username;
     const isAdmin = u.role === 'admin';
+    const isViewer = u.role === 'viewer';
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="username-cell">${escHtml(u.username)}${isSelf ? ' <span style="font-size:10px;color:#8b949e">(ви)</span>' : ''}</td>
-      <td><span class="badge ${isAdmin ? 'badge-admin' : 'badge-user'}">${isAdmin ? 'Адмін' : 'Користувач'}</span></td>
+      <td><span class="badge ${getRoleBadgeClass(u.role)}">${getRoleLabel(u.role)}</span></td>
       <td class="date-cell">${formatDate(u.createdAt)}</td>
       <td class="actions"></td>
     `;
@@ -321,17 +341,30 @@ async function renderUsers() {
 
     if (!isSelf) {
       if (!isAdmin) {
-        const promoteBtn = document.createElement('button');
-        promoteBtn.className = 'btn btn-promote';
-        promoteBtn.textContent = 'Зробити адміном';
-        promoteBtn.addEventListener('click', () => setRole(u.username, 'admin', promoteBtn));
-        actions.appendChild(promoteBtn);
+        const viewerBtn = document.createElement('button');
+        viewerBtn.className = 'btn btn-promote';
+        viewerBtn.textContent = isViewer ? 'Переглядач' : 'Зробити переглядачем';
+        viewerBtn.disabled = isViewer;
+        viewerBtn.addEventListener('click', () => setRole(u.username, 'viewer', viewerBtn));
+        actions.appendChild(viewerBtn);
+
+        const adminBtn = document.createElement('button');
+        adminBtn.className = 'btn btn-promote';
+        adminBtn.textContent = 'Зробити адміном';
+        adminBtn.addEventListener('click', () => setRole(u.username, 'admin', adminBtn));
+        actions.appendChild(adminBtn);
       } else {
-        const demoteBtn = document.createElement('button');
-        demoteBtn.className = 'btn btn-demote';
-        demoteBtn.textContent = 'Зробити юзером';
-        demoteBtn.addEventListener('click', () => setRole(u.username, 'user', demoteBtn));
-        actions.appendChild(demoteBtn);
+        const viewerBtn = document.createElement('button');
+        viewerBtn.className = 'btn btn-demote';
+        viewerBtn.textContent = 'Зробити переглядачем';
+        viewerBtn.addEventListener('click', () => setRole(u.username, 'viewer', viewerBtn));
+        actions.appendChild(viewerBtn);
+
+        const userBtn = document.createElement('button');
+        userBtn.className = 'btn btn-demote';
+        userBtn.textContent = 'Зробити користувачем';
+        userBtn.addEventListener('click', () => setRole(u.username, 'user', userBtn));
+        actions.appendChild(userBtn);
       }
 
       const delBtn = document.createElement('button');

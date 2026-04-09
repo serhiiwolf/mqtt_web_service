@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MQTT Логи</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #0d1117;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e6edf3;
+    }
+
+    nav {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-logo {
+      width: 34px;
+      height: 34px;
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    nav h1 { font-size: 16px; font-weight: 600; flex: 1; }
+
+    .nav-link {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      transition: background .2s, color .2s;
+    }
+
+    .nav-link:hover { background: #21262d; color: #e6edf3; }
+
+    .nav-link.primary {
+      background: linear-gradient(135deg, #f06000, #e03030);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 28px auto;
+      padding: 0 24px;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: 220px 1fr auto;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .control {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      border-radius: 8px;
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+    }
+
+    .control:focus { border-color: #f06000; }
+
+    .btn {
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #e6edf3;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 0 14px;
+      cursor: pointer;
+      min-height: 40px;
+    }
+
+    .btn:hover { background: #30363d; }
+
+    .meta {
+      color: #8b949e;
+      font-size: 12px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .table-wrap {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead { background: #21262d; }
+
+    th {
+      text-align: left;
+      padding: 11px 12px;
+      color: #8b949e;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #21262d;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    .mono { font-family: Consolas, 'Cascadia Code', monospace; word-break: break-all; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 20px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+
+    .tag-connect { color: #3fb950; background: rgba(63,185,80,.12); border-color: rgba(63,185,80,.28); }
+    .tag-disconnect { color: #f85149; background: rgba(248,81,73,.12); border-color: rgba(248,81,73,.28); }
+    .tag-publish { color: #f06000; background: rgba(240,96,0,.12); border-color: rgba(240,96,0,.28); }
+    .tag-subscribe { color: #39c6ff; background: rgba(57,198,255,.12); border-color: rgba(57,198,255,.28); }
+    .tag-unsubscribe { color: #d29922; background: rgba(210,153,34,.12); border-color: rgba(210,153,34,.28); }
+
+    .empty {
+      text-align: center;
+      color: #8b949e;
+      padding: 40px 14px;
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .toolbar { grid-template-columns: 1fr; }
+      .btn { width: 100%; }
+      .container { padding: 0 14px; }
+      nav { padding: 0 14px; }
+      nav h1 { font-size: 14px; }
+      .hide-mobile { display: none; }
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="nav-logo">NR</div>
+  <h1>MQTT Логи</h1>
+  <a href="/dashboard" class="nav-link">Дашборд</a>
+  <a href="/nodes/dashboard/page1" class="nav-link">Дашборди</a>
+  <a href="/admin" class="nav-link">Адмін</a>
+  <a href="/admin/mqtt-logs" class="nav-link primary">MQTT логи</a>
+  <form action="/logout" method="post" style="display:inline">
+    <button type="submit" class="nav-link" style="background:none;border:1px solid #30363d;cursor:pointer">Вийти</button>
+  </form>
+</nav>
+
+<div class="container">
+  <div class="toolbar">
+    <select id="typeFilter" class="control">
+      <option value="all">Усі події</option>
+      <option value="publish">publish</option>
+      <option value="subscribe">subscribe</option>
+      <option value="connect">connect</option>
+      <option value="disconnect">disconnect</option>
+      <option value="unsubscribe">unsubscribe</option>
+    </select>
+    <input id="searchInput" class="control" placeholder="Пошук по clientId, topic, payload" />
+    <button id="refreshBtn" class="btn">Оновити</button>
+  </div>
+
+  <div class="meta">
+    <span id="metaLeft">Завантаження...</span>
+    <span>Показуються останні 200 записів</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 140px;">Час</th>
+          <th style="width: 120px;">Тип</th>
+          <th style="width: 180px;">Client</th>
+          <th>Topic</th>
+          <th class="hide-mobile">Payload / Деталі</th>
+        </tr>
+      </thead>
+      <tbody id="logsBody">
+        <tr><td colspan="5" class="empty">Завантаження...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let allItems = [];
+
+function escHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function typeBadge(type) {
+  const safeType = escHtml(type || 'unknown');
+  return `<span class="tag tag-${safeType}">${safeType}</span>`;
+}
+
+function formatTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString('uk-UA', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  } catch {
+    return '—';
+  }
+}
+
+function matches(item, typeFilter, q) {
+  if (typeFilter !== 'all' && item.type !== typeFilter) return false;
+  if (!q) return true;
+  const line = [item.type, item.clientId, item.topic, item.payload, item.qos, item.ts]
+    .map(v => String(v || '').toLowerCase())
+    .join(' ');
+  return line.includes(q);
+}
+
+function render() {
+  const tbody = document.getElementById('logsBody');
+  const typeFilter = document.getElementById('typeFilter').value;
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  const filtered = allItems.filter(item => matches(item, typeFilter, q));
+
+  document.getElementById('metaLeft').textContent = `Всього: ${allItems.length}, після фільтра: ${filtered.length}`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Немає записів за поточним фільтром</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(item => {
+    const details = [];
+    if (item.payload) details.push(`payload: ${item.payload}`);
+    if (item.qos !== undefined) details.push(`qos: ${item.qos}`);
+    const detailsText = details.join(' | ') || '—';
+
+    return `
+      <tr>
+        <td class="mono">${escHtml(formatTime(item.ts))}</td>
+        <td>${typeBadge(item.type)}</td>
+        <td class="mono">${escHtml(item.clientId || '—')}</td>
+        <td class="mono">${escHtml(item.topic || '—')}</td>
+        <td class="mono hide-mobile">${escHtml(detailsText)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function loadLogs() {
+  const tbody = document.getElementById('logsBody');
+  try {
+    const res = await fetch('/api/mqtt/logs');
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty" style="color:#f85149">Помилка доступу до логів</td></tr>';
+      return;
+    }
+    const data = await res.json();
+    allItems = Array.isArray(data.items) ? data.items : [];
+    render();
+  } catch {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty" style="color:#f85149">Помилка мережі</td></tr>';
+  }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadLogs);
+document.getElementById('typeFilter').addEventListener('change', render);
+document.getElementById('searchInput').addEventListener('input', render);
+
+loadLogs();
+setInterval(loadLogs, 5000);
+</script>
+</body>
+</html>

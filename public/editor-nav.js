@@ -57,6 +57,8 @@
     nav.appendChild(createToolbarItem(createLink('/dashboard', 'Дашборд', 'Відкрити дашборд')));
 
     if (user && user.role === 'admin') {
+      nav.appendChild(createToolbarItem(createLink('/nodes/dashboard/page1', 'Дашборди', 'Відкрити Node-RED dashboard')));
+      nav.appendChild(createToolbarItem(createLink('/admin/mqtt-logs', 'MQTT логи', 'Переглянути MQTT логи')));
       nav.appendChild(createToolbarItem(createLink('/admin', 'Адмін', 'Адмін-панель')));
       nav.appendChild(createToolbarItem(createLink('/editor', 'Редактор', 'Node-RED редактор')));
     }

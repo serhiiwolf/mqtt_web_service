@@ -3,562 +3,467 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MQTT Dashboard — Node-RED</title>
+  <title>MQTT Web Service</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #07111f;
+      --bg2: #0d1b2d;
+      --panel: rgba(10, 18, 31, 0.78);
+      --panel-border: rgba(148, 163, 184, 0.16);
+      --text: #e5eefc;
+      --muted: #8ea0bd;
+      --accent: #ff8a3d;
+      --accent-2: #39c6ff;
+      --good: #4ade80;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
 
     body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(57, 198, 255, 0.22), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(255, 138, 61, 0.22), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(74, 222, 128, 0.14), transparent 24%),
+        linear-gradient(145deg, var(--bg), var(--bg2));
+      overflow-x: hidden;
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.08;
+      background-image:
+        linear-gradient(rgba(255,255,255,.55) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.55) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.65), transparent 92%);
+    }
+
+    .shell {
+      position: relative;
       min-height: 100vh;
-      background: #0d1117;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      color: #e6edf3;
-    }
-
-    /* ── NAV ─────────────────────────────────────────────────── */
-    nav {
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      padding: 0 24px;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .nav-logo {
-      width: 34px; height: 34px;
-      background: linear-gradient(135deg, #f06000, #e03030);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 900; font-size: 14px; color: #fff;
-    }
-    nav h1 { font-size: 16px; font-weight: 600; flex: 1; }
-
-    .nav-link {
-      color: #8b949e;
-      text-decoration: none;
-      font-size: 13px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid #30363d;
-      transition: background .2s, color .2s;
-    }
-    .nav-link:hover { background: #21262d; color: #e6edf3; }
-    .nav-link.primary {
-      background: linear-gradient(135deg, #f06000, #e03030);
-      border-color: transparent;
-      color: #fff;
-      font-weight: 600;
-    }
-    .nav-link.primary:hover { opacity: .85; }
-
-    #userLabel { font-size: 13px; color: #8b949e; }
-
-    /* ── STATUS ──────────────────────────────────────────────── */
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 24px;
-      background: #0d1117;
-      border-bottom: 1px solid #21262d;
-      font-size: 12px;
-      color: #8b949e;
-    }
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #484f58;
-      transition: background .3s;
-    }
-    .dot.connected { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
-    .dot.connecting { background: #e3b341; }
-    .dot.error { background: #f85149; }
-
-    /* ── MAIN GRID ───────────────────────────────────────────── */
-    .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 24px;
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      place-items: center;
+      padding: 32px 20px;
     }
-    @media (max-width: 700px) { .container { grid-template-columns: 1fr; } }
 
-    .panel {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      overflow: hidden;
+    .halo {
+      position: absolute;
+      inset: auto auto 8% 6%;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,138,61,.20), transparent 68%);
+      filter: blur(8px);
+      animation: drift 14s ease-in-out infinite alternate;
     }
-    .panel-header {
-      padding: 14px 18px;
-      border-bottom: 1px solid #30363d;
+
+    .hero {
+      position: relative;
+      width: min(1080px, 100%);
+      border: 1px solid var(--panel-border);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+      padding: 30px;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.06), transparent 30%),
+        linear-gradient(180deg, rgba(255,255,255,.04), transparent 15%);
+      pointer-events: none;
+    }
+
+    .topbar {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
     }
-    .panel-title {
-      font-size: 13px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      color: #8b949e;
-    }
-    .panel-body { padding: 18px; }
 
-    /* ── PUBLISH ─────────────────────────────────────────────── */
-    .input-row {
-      display: flex; gap: 8px; margin-bottom: 10px;
-    }
-    .input-row input, .input-row textarea {
-      flex: 1;
-      padding: 9px 12px;
-      background: #0d1117;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e6edf3;
-      font-size: 13px;
-      outline: none;
-      transition: border-color .2s;
-      font-family: inherit;
-    }
-    .input-row input:focus, .input-row textarea:focus { border-color: #f06000; }
-    .input-row textarea { resize: vertical; min-height: 60px; }
-
-    .btn-pub {
-      padding: 9px 18px;
-      background: linear-gradient(135deg, #f06000, #e03030);
-      border: none; border-radius: 6px;
-      color: #fff; font-size: 13px; font-weight: 600;
-      cursor: pointer; white-space: nowrap;
-      transition: opacity .2s;
-    }
-    .btn-pub:hover { opacity: .85; }
-    .btn-pub:disabled { opacity: .4; cursor: not-allowed; }
-
-    .quick-btns {
-      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
-    }
-    .quick-btn {
-      padding: 5px 10px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 5px;
-      color: #8b949e;
-      font-size: 11px;
-      cursor: pointer;
-      transition: background .2s, color .2s;
-    }
-    .quick-btn:hover { background: #30363d; color: #e6edf3; }
-
-    /* ── SUBSCRIBE / LOG ─────────────────────────────────────── */
-    .sub-row {
-      display: flex; gap: 8px; margin-bottom: 14px;
-    }
-    .sub-row input { flex: 1; padding: 9px 12px; background: #0d1117;
-      border: 1px solid #30363d; border-radius: 6px;
-      color: #e6edf3; font-size: 13px; outline: none;
-      transition: border-color .2s; }
-    .sub-row input:focus { border-color: #f06000; }
-    .btn-sub {
-      padding: 9px 14px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e6edf3;
-      font-size: 13px; font-weight: 600;
-      cursor: pointer;
-      transition: background .2s;
-    }
-    .btn-sub:hover { background: #30363d; }
-
-    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-    .tag {
-      display: flex; align-items: center; gap: 4px;
-      padding: 3px 8px;
-      background: rgba(240,96,0,.12);
-      border: 1px solid rgba(240,96,0,.3);
-      border-radius: 20px;
-      font-size: 11px;
-      color: #f06000;
-    }
-    .tag .rm { cursor: pointer; opacity: .7; font-size: 14px; line-height: 1; }
-    .tag .rm:hover { opacity: 1; }
-
-    /* ── LOG ─────────────────────────────────────────────────── */
-    .log {
-      height: 260px;
-      overflow-y: auto;
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      padding: 10px;
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      font-size: 12px;
-      line-height: 1.6;
-    }
-    .log-entry { display: flex; gap: 8px; margin-bottom: 2px; }
-    .log-time { color: #484f58; white-space: nowrap; }
-    .log-topic { color: #f06000; }
-    .log-payload { color: #a5d6ff; word-break: break-all; }
-    .log-empty { color: #484f58; text-align: center; padding-top: 100px; }
-
-    .btn-clear {
-      padding: 4px 10px;
-      background: transparent;
-      border: 1px solid #30363d;
-      border-radius: 5px;
-      color: #8b949e;
-      font-size: 11px;
-      cursor: pointer;
-    }
-    .btn-clear:hover { background: #21262d; color: #e6edf3; }
-
-    .history {
-      height: 220px;
-      overflow-y: auto;
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      padding: 10px;
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      font-size: 12px;
-      line-height: 1.6;
-    }
-    .history-entry { display: flex; gap: 8px; margin-bottom: 2px; }
-    .history-time { color: #484f58; white-space: nowrap; }
-    .history-type.connect { color: #3fb950; }
-    .history-type.disconnect { color: #f85149; }
-    .history-type.publish { color: #f06000; }
-    .history-text { color: #a5d6ff; word-break: break-all; }
-
-    .history-controls {
+    .brand {
       display: flex;
-      gap: 8px;
-      padding: 10px;
-      border-bottom: 1px solid #21262d;
-      background: #11161d;
+      align-items: center;
+      gap: 14px;
     }
-    .history-filter, .history-search {
-      background: #0d1117;
-      border: 1px solid #30363d;
-      color: #e6edf3;
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 12px;
-      outline: none;
-    }
-    .history-filter:focus, .history-search:focus { border-color: #f06000; }
-    .history-search { flex: 1; }
 
-    /* ── FULL-WIDTH PANEL ─────────────────────────────────────── */
-    .full { grid-column: 1 / -1; }
+    .brand-mark {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      letter-spacing: -1px;
+      color: white;
+      background: linear-gradient(135deg, var(--accent), #ff4d6d);
+      box-shadow: 0 16px 30px rgba(255, 95, 69, 0.26);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: .3px;
+    }
+
+    .brand p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: .2px;
+      transition: transform .2s ease, opacity .2s ease, background .2s ease, border-color .2s ease;
+      will-change: transform;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      color: #0b1420;
+      background: linear-gradient(135deg, #baf1ff, #7cdfff);
+      border: 1px solid rgba(122, 220, 255, 0.55);
+    }
+
+    .btn-ghost {
+      color: var(--text);
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+    }
+
+    .grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap: 18px;
+    }
+
+    @media (max-width: 920px) {
+      .hero { padding: 22px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 22px;
+      background: rgba(7, 13, 25, 0.56);
+      padding: 24px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255, 138, 61, 0.12);
+      border: 1px solid rgba(255, 138, 61, 0.22);
+      color: #ffd3b0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .3px;
+    }
+
+    .hero-title {
+      margin: 18px 0 14px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 0.98;
+      letter-spacing: -1.8px;
+      max-width: 12ch;
+    }
+
+    .hero-copy {
+      margin: 0;
+      max-width: 62ch;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .feature-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    @media (max-width: 720px) {
+      .feature-row { grid-template-columns: 1fr; }
+    }
+
+    .feature {
+      min-height: 112px;
+      padding: 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .feature span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      background: rgba(255,255,255,.08);
+      color: white;
+      font-size: 16px;
+    }
+
+    .feature h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .status-card {
+      border-radius: 18px;
+      padding: 18px;
+      background: linear-gradient(135deg, rgba(57, 198, 255, 0.09), rgba(255, 138, 61, 0.10));
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .status-card h2 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .status-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .role-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .role-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+    }
+
+    .role-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex: none;
+    }
+
+    .role-dot.public { background: var(--accent-2); }
+    .role-dot.viewer { background: var(--good); }
+    .role-dot.admin { background: var(--accent); }
+
+    .role-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .role-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .footer {
+      position: relative;
+      margin-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .footer a {
+      color: #c9f1ff;
+      text-decoration: none;
+    }
+
+    .footer a:hover { text-decoration: underline; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+
+    .pill code {
+      font-family: inherit;
+      color: #dff9ff;
+    }
+
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0) scale(1); }
+      to { transform: translate3d(24px, -18px, 0) scale(1.08); }
+    }
   </style>
 </head>
 <body>
-
-<nav>
-  <div class="nav-logo">NR</div>
-  <h1>MQTT Dashboard</h1>
-  <span id="userLabel">…</span>
-  <a href="/dashboard" class="nav-link">Дашборд</a>
-  <a href="/admin" id="adminLink" class="nav-link" style="display:none">Адмін</a>
-  <a href="/editor" id="editorLink" class="nav-link primary" style="display:none">Редактор</a>
-  <form action="/logout" method="post" style="display:inline">
-    <button type="submit" class="nav-link" style="background:none;border:1px solid #30363d;cursor:pointer">Вийти</button>
-  </form>
-</nav>
-
-<div class="status-bar">
-  <span class="dot" id="dot"></span>
-  <span id="statusText">Підключення…</span>
-  <span style="margin-left:auto">Брокер: <code>ws://localhost:3000/mqtt</code></span>
-</div>
-
-<div class="container">
-
-  <!-- Publish panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Публікація</span>
-    </div>
-    <div class="panel-body">
-      <div class="input-row">
-        <input id="pubTopic" placeholder="topic (напр. test/hello)" value="test/hello" />
+  <div class="noise"></div>
+  <div class="shell">
+    <div class="halo"></div>
+    <main class="hero">
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-mark">MW</div>
+          <div>
+            <h1>MQTT Web Service</h1>
+            <p>Node-RED, MQTT broker і ролі доступу в одному сервісі</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn btn-ghost" href="/login">Увійти</a>
+          <a class="btn btn-primary" href="https://github.com/serhiiwolf/mqtt_web_service" target="_blank" rel="noopener noreferrer">GitHub проект</a>
+        </div>
       </div>
-      <div class="input-row">
-        <textarea id="pubPayload" placeholder="Повідомлення…">Hello MQTT!</textarea>
-        <button class="btn-pub" id="pubBtn" disabled>Надіслати</button>
+
+      <div class="grid">
+        <section class="panel">
+          <span class="eyebrow">Публічна сторінка сервісу</span>
+          <h2 class="hero-title">Інфраструктура для MQTT та Node-RED</h2>
+          <p class="hero-copy">
+            Цей сервіс піднімає MQTT broker, Node-RED та рольовий веб-доступ. На цій сторінці є
+            короткий опис проєкту, а самі Node-RED dashboards доступні лише для окремої ролі після входу.
+          </p>
+
+          <div class="feature-row">
+            <article class="feature">
+              <span>◐</span>
+              <h3>MQTT broker</h3>
+              <p>TCP і WebSocket endpoint для пристроїв, автоматизації та браузерних клієнтів.</p>
+            </article>
+            <article class="feature">
+              <span>▣</span>
+              <h3>Node-RED</h3>
+              <p>Редактор і flow-логіка захищені роллю адміністратора.</p>
+            </article>
+            <article class="feature">
+              <span>◉</span>
+              <h3>Dashboard access</h3>
+              <p>Окрема роль тільки для перегляду Node-RED dashboards без доступу до адміністративних екранів.</p>
+            </article>
+          </div>
+        </section>
+
+        <aside class="stack">
+          <div class="status-card">
+            <h2>Рівні доступу</h2>
+            <p>Гість і звичайний користувач бачать лише цю сторінку. Переглядачі відкривають Node-RED dashboards, а решта доступу залишається за адміністратором.</p>
+            <div class="role-list">
+              <div class="role-item">
+                <span class="role-dot public"></span>
+                <div>
+                  <strong>Public</strong>
+                  <span>Опис сервісу та посилання на проєкт.</span>
+                </div>
+              </div>
+              <div class="role-item">
+                <span class="role-dot viewer"></span>
+                <div>
+                  <strong>Viewer</strong>
+                  <span>Тільки перегляд Node-RED dashboards.</span>
+                </div>
+              </div>
+              <div class="role-item">
+                <span class="role-dot admin"></span>
+                <div>
+                  <strong>Admin</strong>
+                  <span>Повний доступ до editor, адміністративної панелі та керування ролями.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-card">
+            <h2>Швидкі посилання</h2>
+            <div class="role-list" style="margin-top: 0;">
+              <div class="role-item">
+                <span class="role-dot public"></span>
+                <div>
+                  <strong>GitHub</strong>
+                  <span><a href="https://github.com/serhiiwolf/mqtt_web_service" target="_blank" rel="noopener noreferrer">https://github.com/serhiiwolf/mqtt_web_service</a></span>
+                </div>
+              </div>
+              <div class="role-item">
+                <span class="role-dot viewer"></span>
+                <div>
+                  <strong>Sign in</strong>
+                  <span><a href="/login">/login</a> для авторизованих ролей.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
-      <div class="quick-btns">
-        <span class="panel-title" style="font-size:11px;color:#484f58;width:100%;margin-bottom:2px">Швидкі повідомлення:</span>
-        <button class="quick-btn" data-topic="test/hello" data-payload="Hello!">Hello!</button>
-        <button class="quick-btn" data-topic="test/sensor" data-payload='{"temp":22.5,"hum":60}'>Датчик JSON</button>
-        <button class="quick-btn" data-topic="test/led" data-payload="ON">LED ON</button>
-        <button class="quick-btn" data-topic="test/led" data-payload="OFF">LED OFF</button>
-        <button class="quick-btn" data-topic="test/ping" data-payload="ping">Ping</button>
+
+      <div class="footer">
+        <div class="pill">Public landing: <code>/dashboard</code></div>
+        <div class="pill">Viewer dashboards: <code>/nodes/ui</code></div>
       </div>
-    </div>
+    </main>
   </div>
-
-  <!-- Subscribe panel -->
-  <div class="panel">
-    <div class="panel-header">
-      <span class="panel-title">Підписки</span>
-    </div>
-    <div class="panel-body">
-      <div class="sub-row">
-        <input id="subInput" placeholder="topic або # для всіх" value="test/#" />
-        <button class="btn-sub" id="subBtn">Підписатись</button>
-      </div>
-      <div class="tags" id="tags"></div>
-    </div>
-  </div>
-
-  <!-- Log panel -->
-  <div class="panel full">
-    <div class="panel-header">
-      <span class="panel-title">Історія брокера (останні 50)</span>
-      <button class="btn-clear" id="historyRefreshBtn">Оновити</button>
-    </div>
-    <div class="panel-body" style="padding:0">
-      <div class="history-controls">
-        <select id="historyTypeFilter" class="history-filter">
-          <option value="all">Усі події</option>
-          <option value="connect">Підключення</option>
-          <option value="disconnect">Відключення</option>
-          <option value="publish">Publish</option>
-        </select>
-        <input id="historySearch" class="history-search" placeholder="Пошук: clientId, topic, payload" />
-      </div>
-      <div class="history" id="history">
-        <div class="log-empty">Історія завантажується…</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel full">
-    <div class="panel-header">
-      <span class="panel-title">Отримані повідомлення</span>
-      <button class="btn-clear" id="clearBtn">Очистити</button>
-    </div>
-    <div class="panel-body" style="padding:0">
-      <div class="log" id="log">
-        <div class="log-empty">Повідомлення з'являться тут після підписки</div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- mqtt.js from CDN -->
-<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
-<script>
-// ── UI refs ──────────────────────────────────────────────────────────────────
-const dot         = document.getElementById('dot');
-const statusText  = document.getElementById('statusText');
-const pubBtn      = document.getElementById('pubBtn');
-const pubTopic    = document.getElementById('pubTopic');
-const pubPayload  = document.getElementById('pubPayload');
-const subInput    = document.getElementById('subInput');
-const subBtn      = document.getElementById('subBtn');
-const tagsEl      = document.getElementById('tags');
-const logEl       = document.getElementById('log');
-const clearBtn    = document.getElementById('clearBtn');
-const userLabel   = document.getElementById('userLabel');
-const historyEl   = document.getElementById('history');
-const historyRefreshBtn = document.getElementById('historyRefreshBtn');
-const historyTypeFilter = document.getElementById('historyTypeFilter');
-const historySearch = document.getElementById('historySearch');
-
-// ── Load user ────────────────────────────────────────────────────────────────
-fetch('/api/me').then(r => r.json()).then(d => {
-  userLabel.textContent = `Користувач: ${d.username}`;
-  if (d.role === 'admin') {
-    document.getElementById('adminLink').style.display = '';
-    document.getElementById('editorLink').style.display = '';
-  }
-  loadMqttHistory();
-});
-
-// ── MQTT connection ──────────────────────────────────────────────────────────
-const proto  = location.protocol === 'https:' ? 'wss' : 'ws';
-const url    = `${proto}://${location.host}/mqtt`;
-const client = mqtt.connect(url, {
-  clientId: 'dashboard_' + Math.random().toString(16).slice(2, 8),
-  clean: true,
-  reconnectPeriod: 3000
-});
-
-function setStatus(state, text) {
-  dot.className = 'dot ' + state;
-  statusText.textContent = text;
-}
-
-client.on('connect', () => {
-  setStatus('connected', 'Підключено до брокера');
-  pubBtn.disabled = false;
-  // auto-subscribe to current tags
-  subscriptions.forEach(t => client.subscribe(t));
-});
-
-client.on('reconnect', () => setStatus('connecting', 'Перепідключення…'));
-client.on('error',    (e) => setStatus('error', 'Помилка: ' + e.message));
-client.on('offline',  ()  => setStatus('', 'Офлайн'));
-
-client.on('message', (topic, payload) => {
-  logMessage(topic, payload.toString());
-});
-
-// ── Subscriptions ────────────────────────────────────────────────────────────
-let subscriptions = [];
-
-function renderTags() {
-  tagsEl.innerHTML = '';
-  subscriptions.forEach(t => {
-    const el = document.createElement('span');
-    el.className = 'tag';
-    el.innerHTML = `${t} <span class="rm" data-t="${t}">×</span>`;
-    el.querySelector('.rm').addEventListener('click', () => unsubscribe(t));
-    tagsEl.appendChild(el);
-  });
-}
-
-function subscribe(topic) {
-  if (!topic || subscriptions.includes(topic)) return;
-  subscriptions.push(topic);
-  if (client.connected) client.subscribe(topic);
-  renderTags();
-}
-
-function unsubscribe(topic) {
-  subscriptions = subscriptions.filter(t => t !== topic);
-  if (client.connected) client.unsubscribe(topic);
-  renderTags();
-}
-
-subBtn.addEventListener('click', () => {
-  const t = subInput.value.trim();
-  if (t) { subscribe(t); subInput.value = ''; }
-});
-subInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') subBtn.click();
-});
-
-// default subscription
-subscribe('test/#');
-
-// ── Publish ──────────────────────────────────────────────────────────────────
-pubBtn.addEventListener('click', () => {
-  const t = pubTopic.value.trim();
-  const p = pubPayload.value;
-  if (!t) return;
-  client.publish(t, p, { qos: 0 });
-});
-
-pubPayload.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.ctrlKey) pubBtn.click();
-});
-
-document.querySelectorAll('.quick-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    pubTopic.value   = btn.dataset.topic;
-    pubPayload.value = btn.dataset.payload;
-    if (client.connected) pubBtn.click();
-  });
-});
-
-// ── Log ──────────────────────────────────────────────────────────────────────
-let logCount = 0;
-let historyItems = [];
-
-function logMessage(topic, payload) {
-  if (logCount === 0) logEl.innerHTML = '';
-  logCount++;
-
-  const now = new Date().toLocaleTimeString('uk-UA', { hour12: false });
-  const entry = document.createElement('div');
-  entry.className = 'log-entry';
-  entry.innerHTML =
-    `<span class="log-time">${now}</span>` +
-    `<span class="log-topic">${escHtml(topic)}</span>` +
-    `<span class="log-payload">${escHtml(payload)}</span>`;
-  logEl.appendChild(entry);
-  logEl.scrollTop = logEl.scrollHeight;
-
-  // keep max 200 entries
-  while (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
-}
-
-clearBtn.addEventListener('click', () => {
-  logEl.innerHTML = '<div class="log-empty">Повідомлення з\'являться тут після підписки</div>';
-  logCount = 0;
-});
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function formatHistoryText(item) {
-  if (item.type === 'connect') return `Підключився: ${item.clientId}`;
-  if (item.type === 'disconnect') return `Відключився: ${item.clientId}`;
-  if (item.type === 'publish') {
-    return `${item.clientId} -> ${item.topic}: ${item.payload || ''}`;
-  }
-  return JSON.stringify(item);
-}
-
-function renderHistory(items) {
-  const typeFilter = historyTypeFilter.value;
-  const q = historySearch.value.trim().toLowerCase();
-  const filtered = items.filter(item => {
-    if (typeFilter !== 'all' && item.type !== typeFilter) return false;
-    if (!q) return true;
-    const searchable = [
-      item.type || '',
-      item.clientId || '',
-      item.topic || '',
-      item.payload || ''
-    ].join(' ').toLowerCase();
-    return searchable.includes(q);
-  });
-
-  if (!filtered.length) {
-    historyEl.innerHTML = '<div class="log-empty">Поки немає подій брокера</div>';
-    return;
-  }
-
-  historyEl.innerHTML = '';
-  filtered.forEach(item => {
-    const entry = document.createElement('div');
-    entry.className = 'history-entry';
-    const ts = new Date(item.ts).toLocaleTimeString('uk-UA', { hour12: false });
-    entry.innerHTML =
-      `<span class="history-time">${escHtml(ts)}</span>` +
-      `<span class="history-type ${escHtml(item.type)}">${escHtml(item.type)}</span>` +
-      `<span class="history-text">${escHtml(formatHistoryText(item))}</span>`;
-    historyEl.appendChild(entry);
-  });
-  historyEl.scrollTop = 0;
-}
-
-async function loadMqttHistory() {
-  try {
-    const res = await fetch('/api/mqtt/logs');
-    if (!res.ok) return;
-    const data = await res.json();
-    historyItems = Array.isArray(data.items) ? data.items : [];
-    renderHistory(historyItems);
-  } catch (_) {
-    historyEl.innerHTML = '<div class="log-empty">Не вдалося завантажити історію</div>';
-  }
-}
-
-historyRefreshBtn.addEventListener('click', loadMqttHistory);
-historyTypeFilter.addEventListener('change', () => renderHistory(historyItems));
-historySearch.addEventListener('input', () => renderHistory(historyItems));
-setInterval(loadMqttHistory, 5000);
-</script>
 </body>
 </html>

@@ -21,7 +21,7 @@ const server = http.createServer(app);
 // ── MQTT Broker ────────────────────────────────────────────────────────────────
 const aedes = Aedes();
 const mqttEventLog = [];
-const MQTT_EVENT_LOG_LIMIT = 50;
+const MQTT_EVENT_LOG_LIMIT = 200;
 
 function pushMqttEvent(event) {
   mqttEventLog.push({
@@ -75,6 +75,29 @@ aedes.on('publish', (packet, client) => {
   }
 });
 
+aedes.on('subscribe', (subscriptions, client) => {
+  if (!client || !Array.isArray(subscriptions)) return;
+  subscriptions.forEach((sub) => {
+    pushMqttEvent({
+      type: 'subscribe',
+      clientId: client.id || 'unknown',
+      topic: sub.topic,
+      qos: sub.qos
+    });
+  });
+});
+
+aedes.on('unsubscribe', (subscriptions, client) => {
+  if (!client || !Array.isArray(subscriptions)) return;
+  subscriptions.forEach((topic) => {
+    pushMqttEvent({
+      type: 'unsubscribe',
+      clientId: client.id || 'unknown',
+      topic
+    });
+  });
+});
+
 // ── Session & body parsing ─────────────────────────────────────────────────────
 // NODE_ENV=production встановлюється в systemd service на сервері.
 // Це вмикає secure cookie — обов'язково при роботі через Cloudflare HTTPS.
@@ -98,13 +121,36 @@ app.use(session({
 }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path.toLowerCase().endsWith('.html')) {
+    return res.status(404).end();
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Users store (JSON file) ────────────────────────────────────────────────────
 const USERS_FILE = path.join(__dirname, 'users.json');
 
 function getLandingPathForRole(role) {
-  return role === 'admin' ? '/editor' : '/dashboard';
+  if (role === 'admin') return '/editor';
+  if (role === 'viewer') return '/nodes/dashboard/page1';
+  return '/dashboard';
+}
+
+function isBrowserLikeRequest(req) {
+  return req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'));
+}
+
+function isAjaxLikeRequest(req) {
+  return isBrowserLikeRequest(req) || req.path.startsWith('/comms') || req.path.startsWith('/auth') || req.path.match(/\.(js|css|png|ico|json|map)$/);
+}
+
+function redirectToLanding(req, res) {
+  if (req.session && req.session.user) {
+    return res.redirect(getLandingPathForRole(req.session.user.role));
+  }
+  return res.redirect('/dashboard');
 }
 
 function getUsers() {
@@ -118,7 +164,7 @@ function saveUsers(users) {
 
 // ── Auth routes ────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (!req.session.user) return res.redirect('/dashboard');
   res.redirect(getLandingPathForRole(req.session.user.role));
 });
 
@@ -133,13 +179,10 @@ app.get('/register', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
-  if (!req.session.user) return res.redirect('/login');
+  if (req.session.user && req.session.user.role === 'viewer') {
+    return res.redirect(getLandingPathForRole(req.session.user.role));
+  }
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-});
-
-app.get('/mqtt-dashboard', (req, res) => {
-  if (!req.session.user) return res.redirect('/login');
-  res.sendFile(path.join(__dirname, 'public', 'mqtt-dashboard.html'));
 });
 
 app.post('/api/register', async (req, res) => {
@@ -180,7 +223,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/login'));
+  req.session.destroy(() => res.redirect('/dashboard'));
 });
 
 // ── Session info endpoint (used by dashboard) ──────────────────────────────────
@@ -190,8 +233,8 @@ app.get('/api/me', (req, res) => {
 });
 
 app.get('/api/mqtt/logs', (req, res) => {
-  if (!req.session || !req.session.user) {
-    return res.status(401).json({ error: 'not authenticated' });
+  if (!req.session || !req.session.user || req.session.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Доступ заборонено' });
   }
   res.json({ items: mqttEventLog.slice(-MQTT_EVENT_LOG_LIMIT).reverse() });
 });
@@ -202,17 +245,37 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ error: 'Доступ заборонено' });
 }
 
+function requireDashboardViewerOrAdmin(req, res, next) {
+  if (!req.session || !req.session.user) {
+    if (isAjaxLikeRequest(req)) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/dashboard');
+  }
+
+  if (req.session.user.role === 'admin' || req.session.user.role === 'viewer') return next();
+
+  if (isBrowserLikeRequest(req)) {
+    return res.status(403).json({ error: 'Доступ заборонено' });
+  }
+  return res.redirect('/dashboard');
+}
+
 function requireAdminPage(req, res, next) {
-  if (!req.session || !req.session.user) return res.redirect('/login');
-  if (req.session.user.role !== 'admin') return res.redirect('/dashboard');
+  if (!req.session || !req.session.user) return res.redirect('/dashboard');
+  if (req.session.user.role !== 'admin') return res.redirect(getLandingPathForRole(req.session.user.role));
   next();
 }
 
 // ── Admin API ──────────────────────────────────────────────────────────────────
 app.get('/admin', (req, res) => {
-  if (!req.session.user) return res.redirect('/login');
-  if (req.session.user.role !== 'admin') return res.redirect('/dashboard');
+  if (!req.session.user) return res.redirect('/dashboard');
+  if (req.session.user.role !== 'admin') return res.redirect(getLandingPathForRole(req.session.user.role));
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/admin/mqtt-logs', (req, res) => {
+  if (!req.session.user) return res.redirect('/dashboard');
+  if (req.session.user.role !== 'admin') return res.redirect(getLandingPathForRole(req.session.user.role));
+  res.sendFile(path.join(__dirname, 'public', 'mqtt-logs.html'));
 });
 
 app.get('/api/users', requireAdmin, (req, res) => {
@@ -228,13 +291,13 @@ app.get('/api/users', requireAdmin, (req, res) => {
 app.patch('/api/users/:username/role', requireAdmin, (req, res) => {
   const { username } = req.params;
   const { role } = req.body;
-  if (!['admin', 'user'].includes(role))
+  if (!['admin', 'user', 'viewer'].includes(role))
     return res.status(400).json({ error: 'Невалідна роль' });
   const users = getUsers();
   if (!users[username])
     return res.status(404).json({ error: 'Користувача не знайдено' });
   // Prevent the last admin from losing admin rights
-  if (role === 'user' && users[username].role === 'admin') {
+  if (role !== 'admin' && users[username].role === 'admin') {
     const adminCount = Object.values(users).filter(u => u.role === 'admin').length;
     if (adminCount <= 1)
       return res.status(400).json({ error: 'Неможливо прибрати права останнього адміна' });
@@ -270,22 +333,23 @@ function requireAuth(req, res, next) {
 
 function requireAdminForEditor(req, res, next) {
   if (!req.session || !req.session.user) {
-    const isAjax =
-      req.xhr ||
-      (req.headers.accept && req.headers.accept.includes('application/json')) ||
-      req.path.startsWith('/comms') ||
-      req.path.startsWith('/auth') ||
-      req.path.match(/\.(js|css|png|ico|json|map)$/);
-    if (isAjax) return res.status(401).json({ error: 'Unauthorized' });
-    return res.redirect('/login');
+    if (isAjaxLikeRequest(req)) return res.status(401).json({ error: 'Unauthorized' });
+    return res.redirect('/dashboard');
   }
 
   if (req.session.user.role === 'admin') return next();
 
-  if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+  if (isBrowserLikeRequest(req)) {
     return res.status(403).json({ error: 'Доступ заборонено' });
   }
-  return res.redirect('/dashboard');
+  return res.redirect(getLandingPathForRole(req.session.user.role));
+}
+
+function requireNodeHttpAccess(req, res, next) {
+  if (req.path.startsWith('/ui')) {
+    return requireDashboardViewerOrAdmin(req, res, next);
+  }
+  return requireAdmin(req, res, next);
 }
 
 // ── Node-RED ───────────────────────────────────────────────────────────────────
@@ -301,6 +365,10 @@ const settings = {
   httpAdminMiddleware: requireAdminForEditor,
   disableEditor: false,
   functionGlobalContext: {},
+  ui: {
+    path: 'ui',
+    middleware: requireDashboardViewerOrAdmin
+  },
   logging: {
     console: { level: 'warn', metrics: false, audit: false }
   },
@@ -314,12 +382,14 @@ const settings = {
 
 RED.init(server, settings);
 app.use(settings.httpAdminRoot, requireAdminPage, RED.httpAdmin);
-app.use(settings.httpNodeRoot, requireAdmin, RED.httpNode);
+app.use(settings.httpNodeRoot, requireNodeHttpAccess, RED.httpNode);
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 server.listen(3000, '127.0.0.1', () => {
   console.log('');
   console.log('  App:          http://localhost:3000');
+  console.log('  Dashboard:    http://localhost:3000/dashboard');
+  console.log('  Node-RED UI:  http://localhost:3000/nodes/dashboard/page1');
   console.log('  Node-RED:     http://localhost:3000/editor');
   console.log('  MQTT:         mqtt://localhost:1883');
   console.log('  MQTT (WS):    ws://localhost:3000/mqtt');
