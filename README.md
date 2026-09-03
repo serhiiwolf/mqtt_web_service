@@ -1,111 +1,132 @@
 # MQTT Web Service
 
-Веб-сервіс з MQTT broker, Node-RED та рольовим доступом до веб-інтерфейсів.
+Веб-сервіс для керування MQTT, Node-RED, користувачами та пристроями в одному
+SCADA/IIoT control plane. Сервер працює на Node.js 22.5+ і використовує
+вбудований `node:sqlite`.
 
-## Що є в проєкті
+## Можливості
 
-- Публічна сторінка сервісу на `/dashboard`
-- Node-RED dashboard для ролі `viewer` на `/nodes/ui`
-- Node-RED editor на `/editor` тільки для `admin`
-- Адмін-панель на `/admin` тільки для `admin`
-- MQTT broker всередині застосунку:
-  - TCP: `mqtt://localhost:1883`
-  - WebSocket: `ws://localhost:3000/mqtt`
+- SCADA dashboard `/dashboard` з broker/runtime метриками, live topics,
+  подіями та статусом кожного зареєстрованого MQTT-пристрою.
+- Quick Publisher на dashboard: публікація topic/payload через авторизований API.
+- MQTT broker:
+  - TCP `mqtt://localhost:1883`;
+  - WebSocket `ws://localhost:3000/mqtt`;
+  - username/password authentication для пристроїв.
+- Журнал connect, disconnect, publish, subscribe та unsubscribe у SQLite.
+  Зберігаються події за останні 3 дні.
+- Сторінка `/admin/mqtt-logs` з пошуком, фільтрами, метриками та автооновленням.
+- Керування MQTT-пристроями на `/admin/mqtt-devices`: створення, видалення,
+  перегляд і повторне приховування паролів, online/offline статуси на dashboard.
+- Керування користувачами та granular permissions на `/admin`.
+- Node-RED dashboard `/nodes/ui` та Node-RED editor `/editor`.
+- Спільна SCADA-навігація на веб-сторінках і в Node-RED editor.
 
-## Ролі
+## Доступ і permissions
 
-- `user` - бачить тільки публічну сторінку сервісу
-- `viewer` - бачить тільки Node-RED dashboards
-- `admin` - має доступ до всього
+Доступ визначається безпосередньо набором permissions, які адміністратор
+вмикає або вимикає для кожного користувача в permission matrix на `/admin`.
+Доступні права:
 
-## Як це працює
+- `view:dashboard` — основний dashboard і Quick Publisher;
+- `view:nodes_ui` — Node-RED dashboard;
+- `view:admin` — Users & Access;
+- `view:mqtt_logs` — MQTT Logs;
+- `manage:users` — видалення користувачів;
+- `grant:permissions` — зміна permissions;
+- `manage:devices` — MQTT Devices і credentials;
+- `access:editor` — Node-RED editor.
 
-- Незалоговані користувачі потрапляють на публічну сторінку `/dashboard`
-- Звичайний користувач після входу теж залишається лише на `/dashboard`
-- Роль `viewer` після входу переходить на `/nodes/ui`
-- Роль `admin` після входу переходить на `/editor`
-- Прямий доступ до HTML-файлів з `public/` закритий, доступ йде тільки через маршрути сервера
+Новий користувач отримує тільки `view:dashboard`. API та захищені сторінки
+перевіряють сесію і permissions server-side. Старий endpoint призначення
+`role` збережений лише для сумісності з попередніми даними; актуальний UI
+працює виключно через granular permissions.
 
-## Структура
+## Запуск
 
-- `server.js` - сервер, авторизація, ролі, MQTT, Node-RED
-- `users.json` - сховище користувачів
-- `public/dashboard.html` - публічна сторінка сервісу
-- `public/login.html` - сторінка входу
-- `public/register.html` - сторінка реєстрації
-- `public/admin.html` - адмін-панель
-- `public/editor-nav.js` - додаткова навігація в Node-RED editor
-- `apache.conf` - приклад reverse proxy конфігурації Apache
-- `cloudflared.yml` - приклад конфігу Cloudflare Tunnel
-- `mqtttest.service` - приклад systemd unit
-
-## Локальний запуск
-
-1. Встановити залежності:
+Потрібен Node.js 22.5+ (Node.js 22 LTS рекомендовано).
 
 ```bash
+copy .env.example .env
+# встановіть у .env унікальні SESSION_SECRET,
+# NODERED_CREDENTIAL_SECRET і 32-byte MQTT_ENCRYPTION_KEY
 npm install
-```
-
-2. Запустити застосунок:
-
-```bash
 npm start
 ```
 
-3. Відкрити у браузері:
+Для першого адміністратора:
+
+```bash
+npm run create-admin -- <username> <password>
+```
+
+Адреси після запуску:
 
 - `http://localhost:3000/dashboard`
 - `http://localhost:3000/login`
 - `http://localhost:3000/register`
 - `http://localhost:3000/admin`
-- `http://localhost:3000/editor`
+- `http://localhost:3000/admin/mqtt-logs`
+- `http://localhost:3000/admin/mqtt-devices`
 - `http://localhost:3000/nodes/ui`
+- `http://localhost:3000/editor`
 
-## Маршрути
+## API
 
-### Публічні
+### Сесія
 
-- `GET /` - редірект на `/dashboard` або landing за роллю
-- `GET /dashboard` - публічна сторінка сервісу
-- `GET /login`
-- `GET /register`
-
-### Авторизовані
-
-- `GET /nodes/ui` - Node-RED dashboards для ролі `viewer` та `admin`
-- `GET /admin` - тільки `admin`
-- `GET /editor` - тільки `admin`
-
-### API
-
-- `POST /api/register` - створює користувача з роллю `user`
+- `POST /api/register`
 - `POST /api/login`
 - `POST /logout`
 - `GET /api/me`
-- `GET /api/mqtt/logs` - тільки `admin`
-- `GET /api/users` - тільки `admin`
-- `PATCH /api/users/:username/role` - тільки `admin`
-- `DELETE /api/users/:username` - тільки `admin`
 
-## Node-RED
+### MQTT
 
-Налаштування в `server.js`:
+- `GET /api/mqtt/logs` — події за останні 3 дні (`view:mqtt_logs`);
+- `POST /api/mqtt/publish` — Quick Publisher (`view:dashboard`);
+- `GET /api/mqtt/devices/status` — online/offline статуси (`view:dashboard`);
+- `GET /api/mqtt/devices` — список пристроїв (`manage:devices`);
+- `POST /api/mqtt/devices` — створення credentials;
+- `GET /api/mqtt/devices/:username/password` — отримання пароля за permission;
+- `DELETE /api/mqtt/devices/:username` — видалення пристрою.
 
-- `httpAdminRoot: /editor`
-- `httpNodeRoot: /nodes`
-- `ui.path: ui`
-- dashboard доступний як `/nodes/ui`
+### Користувачі
 
-## Безпека
+- `GET /api/users`;
+- `PATCH /api/users/:username/permissions`;
+- `DELETE /api/users/:username`.
 
-- `SESSION_SECRET` і `NODERED_CREDENTIAL_SECRET` треба задати через environment variables
-- У production не використовувати fallback-значення з коду
-- HTTP доступ до `public/*.html` напряму закритий, використовуються тільки route handlers
+Усі перелічені API, крім login/register/me, вимагають відповідного permission.
 
-## Перевірка
+## Node-RED та деплой
 
-1. Відкрити `/dashboard` без входу
-2. Залогінитися як `user` і переконатися, що доступний тільки `/dashboard`
-3. Залогінитися як `viewer` і перевірити доступ до `/nodes/ui`
-4. Залогінитися як `admin` і перевірити `/admin` та `/editor`
+Конфігурація в `server.js`: `httpAdminRoot=/editor`, `httpNodeRoot=/nodes`,
+dashboard path `/nodes/ui`. Основний flow зберігається у
+`.node-red/flows.json`. `flows_cred.json` навмисно не додається до Git, бо
+містить credentials; його треба створити або налаштувати локально на сервері.
+
+Для reverse proxy/deployment є приклади:
+
+- `apache.conf` — Apache з HTTP та WebSocket proxy;
+- `cloudflared.yml` — Cloudflare Tunnel;
+- `mqtttest.service` — systemd unit.
+
+## Зберігання і безпека
+
+- користувачі, MQTT devices і MQTT event logs зберігаються в
+  `mqtt-web-service.db`;
+- passwords пристроїв шифруються AES-256-GCM;
+- секрети з `.env`, database, Node-RED credentials, TLS keys і runtime backup
+  файли не повинні потрапляти до Git;
+- прямий доступ до `public/*.html` закритий, сторінки віддаються через route
+  handlers;
+- у production обов'язково задайте всі три secret variables і використовуйте
+  HTTPS/reverse proxy.
+
+## Структура
+
+- `server.js` — Express, SQLite, auth, MQTT broker, WebSocket і Node-RED;
+- `public/` — dashboard, auth, admin, MQTT logs/devices та UI theme;
+- `.node-red/flows.json` — версійований Node-RED flow;
+- `scripts/create-admin.js` — створення адміністратора;
+- `.env.example` — шаблон змінних середовища.

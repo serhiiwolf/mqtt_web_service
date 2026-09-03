@@ -2,8 +2,12 @@
   "name": "mqtt-web-service",
   "version": "1.0.0",
   "description": "MQTT Web Service with Node-RED",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "aedes": "^0.51.3",
@@ -13,7 +17,6 @@
     "express-session": "^1.17.3",
     "node-red": "^4.1.6",
     "node-red-dashboard": "^3.6.2",
-    "node": "^25.7.0",
     "websocket-stream": "^5.5.2"
   }
 }

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQTT Devices — Node-RED MQTT</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{surface:{dim:'#090d15'},panel:'#111823',primary:'#ff7a18',border:{base:'#252d3a'},text:{main:'#e6edf7',muted:'#8190a6'}},fontFamily:{sans:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']}}}};</script>
+  <link rel="stylesheet" href="/ui.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    .device-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(250px,.75fr); gap:10px; margin-top:10px; }
+    .register-form { display:grid; grid-template-columns:1fr auto; gap:6px; }
+    .notice { display:none; margin-top:8px; padding:8px; border:1px solid rgba(56,217,150,.45); color:var(--green); background:rgba(56,217,150,.07); }
+    .notice.error { border-color:rgba(255,89,100,.5); color:var(--red); background:rgba(255,89,100,.07); }
+    .device-table { overflow:auto; } .device-table table { min-width:600px; }
+    .password { color:var(--amber); font:10px "JetBrains Mono",monospace; }
+    .helper { color:var(--muted); font-size:10px; } .helper code { display:block; margin-top:7px; padding:8px; color:var(--cyan); background:#090f18; border:1px solid var(--line); font:10px "JetBrains Mono",monospace; overflow:auto; }
+    .device-banner { display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:10px; border:1px solid rgba(32,200,232,.3); color:var(--cyan); background:rgba(32,200,232,.06); font:10px "JetBrains Mono",monospace; }
+    @media(max-width:800px) { .device-layout { grid-template-columns:1fr; } .register-form { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <nav><a href="/dashboard">Dashboard</a><a href="/admin/mqtt-logs">MQTT Logs</a><a href="/admin/mqtt-devices">MQTT Devices</a><a href="/admin">Users &amp; Access</a><a href="/nodes/ui">Node-RED UI</a><a href="/editor">Editor</a></nav>
+  <script src="/site-nav.js"></script>
+  <main class="page-shell">
+    <header class="page-header"><div><p class="eyebrow">IDENTITY / MQTT ACCESS</p><h1 class="page-title">MQTT Devices</h1><p class="page-subtitle">Provision service credentials for trusted broker clients.</p></div><span class="badge ok"><span class="led"></span>DEVICE STORE ONLINE</span></header>
+    <div class="device-banner"><span class="led"></span><strong>REGISTRATION CHANNEL READY</strong><span class="muted">Passwords are encrypted at rest and shown only on request.</span></div>
+    <section class="metric-grid"><article class="metric"><span class="metric-label">Credential store</span><strong class="metric-value green">READY</strong></article><article class="metric"><span class="metric-label">Protocol</span><strong class="metric-value cyan">MQTT</strong></article><article class="metric"><span class="metric-label">Auth mode</span><strong class="metric-value orange">PASSWORD</strong></article><article class="metric"><span class="metric-label">Transport</span><strong class="metric-value green">TLS/WS</strong></article></section>
+    <div class="device-layout">
+      <div class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Register device credential</h2><span class="muted mono">NEW CLIENT</span></header><div class="panel-body"><form id="createForm" class="register-form"><input id="deviceUsername" class="control mono" placeholder="device-01" minlength="3" maxlength="64" required><button class="btn primary" type="submit">CREATE</button></form><div id="notice" class="notice"></div></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Credentials / provisioned clients</h2><span class="badge info">ENCRYPTED</span></header><div class="device-table"><table><thead><tr><th>Username</th><th>Password</th><th>Created</th><th>Actions</th></tr></thead><tbody id="devices"><tr><td colspan="4" class="empty">Завантаження…</td></tr></tbody></table></div></section></div>
+      <aside class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Client helper</h2></header><div class="panel-body helper">Use the generated username and password in your MQTT client.<code>host  localhost<br>port  1883<br>protocol mqtt</code><p>WebSocket clients use <span class="mono">ws://host:3000/mqtt</span>.</p></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Credential policy</h2></header><div class="panel-body"><div class="status-row"><span class="status-label">USERNAME</span><span class="status-value">3–64 CHARS</span></div><div class="status-row"><span class="status-label">PASSWORD</span><span class="status-value">RANDOM</span></div><div class="status-row"><span class="status-label">REVEAL</span><span class="status-value warn">ON DEMAND</span></div></div></section></aside>
+    </div>
+  </main><script>
+  const notice = document.getElementById('notice');
+  function show(message, error) { notice.textContent = message; notice.className = 'notice' + (error ? ' error' : ''); notice.style.display = 'block'; }
+  function esc(value) { return String(value).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }
+  async function load() {
+    const response = await fetch('/api/mqtt/devices');
+    if (!response.ok) { show('Unable to load devices', true); return; }
+    const devices = await response.json(), body = document.getElementById('devices');
+    body.innerHTML = devices.length ? '' : '<tr><td colspan="4" class="empty">No devices provisioned</td></tr>';
+    devices.forEach(device => {
+      const row = document.createElement('tr');
+      row.innerHTML = `<td class="mono">${esc(device.username)}</td><td class="password" data-username="${esc(device.username)}">••••••••</td><td class="muted mono">${new Date(device.createdAt).toLocaleString('uk-UA')}</td><td><button class="btn show" type="button">REVEAL</button> <button class="btn danger delete" type="button">DELETE</button></td>`;
+      const passwordCell = row.querySelector('.password');
+      const showButton = row.querySelector('.show');
+      let revealedPassword = null;
+      showButton.onclick = async () => {
+        if (revealedPassword !== null) {
+          revealedPassword = null;
+          passwordCell.textContent = '••••••••';
+          showButton.textContent = 'REVEAL';
+          return;
+        }
+        showButton.disabled = true;
+        try {
+          const r = await fetch('/api/mqtt/devices/' + encodeURIComponent(device.username) + '/password');
+          const data = await r.json();
+          if (!r.ok) { show(data.error || 'Unable to reveal password', true); return; }
+          revealedPassword = data.password;
+          passwordCell.textContent = revealedPassword;
+          showButton.textContent = 'HIDE';
+        } finally {
+          showButton.disabled = false;
+        }
+      };
+      row.querySelector('.delete').onclick = async () => { if (!confirm('Delete this device?')) return; const r = await fetch('/api/mqtt/devices/' + encodeURIComponent(device.username), { method:'DELETE' }); if (r.ok) load(); };
+      body.appendChild(row);
+    });
+  }
+  document.getElementById('createForm').onsubmit = async event => { event.preventDefault(); const r = await fetch('/api/mqtt/devices', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:document.getElementById('deviceUsername').value.trim()}) }); const data = await r.json(); if (!r.ok) return show(data.error || 'Request failed', true); show('Device ' + data.username + ' created. Password: ' + data.password); event.target.reset(); load(); };
+  load();
+</script>
+</body>
+</html>

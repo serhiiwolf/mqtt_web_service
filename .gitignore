@@ -1,9 +1,14 @@
 node_modules/
-.node-red/
+.node-red/*
+!.node-red/flows.json
+!.node-red/.gitignore
 users.json
+users.json.migrated
 .env
 .env.*
 !.env.example
 .cloudflared/
 *.pem
 *.key
+mqtt-web-service.db
+mqtt-web-service.db-*

@@ -1,393 +1,115 @@
-<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="uk">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Адмін-панель</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Users &amp; Access — Node-RED MQTT</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{surface:{dim:'#090d15'},panel:'#111823',primary:'#ff7a18',border:{base:'#252d3a'},text:{main:'#e6edf7',muted:'#8190a6'}},fontFamily:{sans:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']}}}};</script>
+  <link rel="stylesheet" href="/ui.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      min-height: 100vh;
-      background: #0d1117;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      color: #e6edf3;
-    }
-
-    /* ── NAV ────────────────────────────────────────────────── */
-    nav {
-      background: #161b22;
-      border-bottom: 1px solid #30363d;
-      padding: 0 24px;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .nav-logo {
-      width: 34px; height: 34px;
-      background: linear-gradient(135deg, #f06000, #e03030);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 900; font-size: 14px; color: #fff;
-    }
-    nav h1 { font-size: 16px; font-weight: 600; flex: 1; }
-    .nav-link {
-      color: #8b949e;
-      text-decoration: none;
-      font-size: 13px;
-      padding: 6px 12px;
-      border-radius: 6px;
-      border: 1px solid #30363d;
-      transition: background .2s, color .2s;
-    }
-    .nav-link:hover { background: #21262d; color: #e6edf3; }
-    .nav-link.primary {
-      background: linear-gradient(135deg, #f06000, #e03030);
-      border-color: transparent;
-      color: #fff;
-      font-weight: 600;
-    }
-    .nav-link.primary:hover { opacity: .85; }
-
-    /* ── MAIN ───────────────────────────────────────────────── */
-    .container {
-      max-width: 900px;
-      margin: 32px auto;
-      padding: 0 24px;
-    }
-
-    .page-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 20px;
-      color: #e6edf3;
-    }
-
-    /* ── TABLE ──────────────────────────────────────────────── */
-    .table-wrap {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      overflow: hidden;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    thead {
-      background: #21262d;
-    }
-
-    th {
-      padding: 12px 16px;
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .6px;
-      color: #8b949e;
-      border-bottom: 1px solid #30363d;
-    }
-
-    td {
-      padding: 12px 16px;
-      border-bottom: 1px solid #21262d;
-      vertical-align: middle;
-    }
-
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,.02); }
-
-    .username-cell {
-      font-weight: 600;
-      color: #e6edf3;
-    }
-
-    .date-cell {
-      color: #8b949e;
-      font-size: 12px;
-    }
-
-    /* ── ROLE BADGE ─────────────────────────────────────────── */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 3px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .3px;
-    }
-    .badge-admin {
-      background: rgba(240,96,0,.15);
-      border: 1px solid rgba(240,96,0,.35);
-      color: #f06000;
-    }
-    .badge-user {
-      background: rgba(63,185,80,.1);
-      border: 1px solid rgba(63,185,80,.3);
-      color: #3fb950;
-    }
-    .badge-viewer {
-      background: rgba(57,198,255,.12);
-      border: 1px solid rgba(57,198,255,.3);
-      color: #39c6ff;
-    }
-
-    /* ── ACTIONS ────────────────────────────────────────────── */
-    .actions { display: flex; gap: 8px; }
-
-    .btn {
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid #30363d;
-      transition: background .2s, color .2s, opacity .2s;
-    }
-    .btn:disabled { opacity: .35; cursor: not-allowed; }
-
-    .btn-promote {
-      background: rgba(240,96,0,.1);
-      border-color: rgba(240,96,0,.35);
-      color: #f06000;
-    }
-    .btn-promote:hover:not(:disabled) { background: rgba(240,96,0,.22); }
-
-    .btn-demote {
-      background: rgba(63,185,80,.08);
-      border-color: rgba(63,185,80,.3);
-      color: #3fb950;
-    }
-    .btn-demote:hover:not(:disabled) { background: rgba(63,185,80,.18); }
-
-    .btn-delete {
-      background: rgba(248,81,73,.08);
-      border-color: rgba(248,81,73,.3);
-      color: #f85149;
-    }
-    .btn-delete:hover:not(:disabled) { background: rgba(248,81,73,.18); }
-
-    /* ── TOAST ──────────────────────────────────────────────── */
-    #toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity .3s;
-      z-index: 999;
-    }
-    #toast.show { opacity: 1; }
-    #toast.ok  { background: #1f6331; border: 1px solid #2ea043; color: #aff2be; }
-    #toast.err { background: #5c1a1a; border: 1px solid #f85149; color: #ffa5a0; }
-
-    /* ── LOADING ────────────────────────────────────────────── */
-    .loading {
-      text-align: center;
-      padding: 48px;
-      color: #8b949e;
-      font-size: 13px;
-    }
+    .admin-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
+    .admin-layout { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(260px,.75fr); gap:10px; }
+    .table-wrap { overflow:auto; }
+    .permission-list { display:flex; flex-wrap:wrap; gap:4px; max-width:560px; }
+    .permission { display:inline-flex; align-items:center; gap:4px; padding:4px 6px; border:1px solid var(--line); color:var(--muted); background:#0c121c; font:9px "JetBrains Mono",monospace; cursor:pointer; }
+    .permission.active { color:var(--green); border-color:rgba(56,217,150,.45); background:rgba(56,217,150,.08); }
+    .permission input { width:10px; height:10px; accent-color:var(--green); }
+    .save-permissions { display:none; margin-top:7px; }
+    .save-permissions.visible { display:inline-block; }
+    .username-cell { color:var(--cyan); font:11px "JetBrains Mono",monospace; white-space:nowrap; }
+    .date-cell { color:var(--muted); font:9px "JetBrains Mono",monospace; white-space:nowrap; }
+    .actions { white-space:nowrap; }
+    .policy-card { padding:9px; border:1px solid var(--line); border-left:2px solid var(--cyan); background:rgba(23,33,49,.35); }
+    .policy-card.orange { border-left-color:var(--orange); } .policy-card.green { border-left-color:var(--green); }
+    .policy-card strong { display:block; font-size:10px; } .policy-card p { margin:3px 0 0; color:var(--muted); font:9px "JetBrains Mono",monospace; }
+    .audit-line { display:flex; gap:7px; padding:7px 0; border-bottom:1px solid var(--line); color:var(--muted); font:9px "JetBrains Mono",monospace; }
+    .audit-line:last-child { border-bottom:0; } .audit-line b { color:var(--text); font-weight:400; }
+    #toast { position:fixed; right:16px; bottom:16px; z-index:70; padding:9px 12px; border:1px solid var(--line-hi); background:#111823; color:var(--text); opacity:0; pointer-events:none; transition:opacity .2s; }
+    #toast.show { opacity:1; } #toast.ok { color:var(--green); border-color:rgba(56,217,150,.5); } #toast.err { color:var(--red); border-color:rgba(255,89,100,.5); }
+    @media(max-width:850px) { .admin-layout { grid-template-columns:1fr; } .admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   </style>
 </head>
 <body>
-
-<nav>
-  <div class="nav-logo">NR</div>
-  <h1>Адмін-панель</h1>
-  <a href="/dashboard" class="nav-link">Дашборд</a>
-  <a href="/nodes/ui" class="nav-link">Дашборди</a>
-  <a href="/admin/mqtt-logs" class="nav-link">MQTT логи</a>
-  <a href="/admin" class="nav-link">Адмін</a>
-  <a href="/editor" class="nav-link primary">Редактор</a>
-  <form action="/logout" method="post" style="display:inline">
-    <button type="submit" class="nav-link" style="background:none;border:1px solid #30363d;cursor:pointer">Вийти</button>
-  </form>
-</nav>
-
-<div class="container">
-  <div class="page-title">Управління користувачами</div>
-
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Користувач</th>
-          <th>Роль</th>
-          <th>Дата реєстрації</th>
-          <th>Дії</th>
-        </tr>
-      </thead>
-      <tbody id="usersBody">
-        <tr><td colspan="4" class="loading">Завантаження…</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<div id="toast"></div>
-
-<script>
-let currentUser = null;
-
-async function loadMe() {
-  const r = await fetch('/api/me');
-  if (!r.ok) { location.href = '/login'; return; }
-  currentUser = await r.json();
-}
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('uk-UA', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
-}
-
-function showToast(msg, type) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'show ' + type;
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => { t.className = ''; }, 3000);
-}
-
-async function setRole(username, role, btn) {
-  btn.disabled = true;
-  try {
-    const r = await fetch(`/api/users/${encodeURIComponent(username)}/role`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role })
+  <nav><a href="/dashboard">Dashboard</a><a href="/admin/mqtt-logs">MQTT Logs</a><a href="/admin/mqtt-devices">MQTT Devices</a><a href="/admin">Users &amp; Access</a><a href="/nodes/ui">Node-RED UI</a><a href="/editor">Editor</a></nav>
+  <script src="/site-nav.js"></script>
+  <main class="page-shell">
+    <header class="page-header"><div><p class="eyebrow">SECURITY / RBAC CONTROL</p><h1 class="page-title">Users &amp; Access</h1><p class="page-subtitle">Зміни permissions застосовуються одразу, без повторного входу користувача.</p></div><span class="badge ok"><span class="led"></span>POLICY ENFORCED</span></header>
+    <section class="admin-stats"><article class="metric"><span class="metric-label">Identity store</span><strong class="metric-value green">ONLINE</strong></article><article class="metric"><span class="metric-label">Policy mode</span><strong class="metric-value cyan">RBAC</strong></article><article class="metric"><span class="metric-label">Session lock</span><strong class="metric-value orange">ACTIVE</strong></article><article class="metric"><span class="metric-label">Audit channel</span><strong class="metric-value green">READY</strong></article></section>
+    <div class="admin-layout">
+      <section class="panel"><header class="panel-head"><h2 class="panel-title">Users / permissions matrix</h2><span class="muted mono">LIVE DIRECTORY</span></header><div class="table-wrap"><table><thead><tr><th>Користувач</th><th>Права</th><th>Дата реєстрації</th><th>Дії</th></tr></thead><tbody id="usersBody"><tr><td colspan="4" class="loading">Завантаження…</td></tr></tbody></table></div></section>
+      <aside class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Permission policy</h2></header><div class="panel-body" style="display:grid;gap:7px"><div class="policy-card green"><strong>VIEWER</strong><p>dashboard + node-red UI read access</p></div><div class="policy-card"><strong>OPERATOR</strong><p>MQTT logs and device telemetry</p></div><div class="policy-card orange"><strong>ADMIN</strong><p>users, grants, devices and editor</p></div></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Audit feed</h2><span class="badge info">SECURE</span></header><div class="panel-body"><div class="audit-line"><span class="led" style="color:var(--green)"></span><b>Permission changes</b><span>IMMEDIATE</span></div><div class="audit-line"><span class="led" style="color:var(--cyan)"></span><b>Session validation</b><span>COOKIE</span></div><div class="audit-line"><span class="led" style="color:var(--orange)"></span><b>Self-lock guard</b><span>ACTIVE</span></div></div></section></aside>
+    </div>
+  </main>
+  <div id="toast"></div><script>
+  let currentUser = null;
+  const permissionLabels = {
+    'view:dashboard': 'Dashboard', 'view:nodes_ui': 'Node-RED UI',
+    'view:admin': 'Users & Access', 'view:mqtt_logs': 'MQTT Logs',
+    'manage:users': 'Manage users', 'grant:permissions': 'Grant permissions',
+    'manage:devices': 'MQTT Devices', 'access:editor': 'Editor'
+  };
+  async function loadMe() {
+    const response = await fetch('/api/me');
+    if (!response.ok) { location.href = '/login'; return; }
+    currentUser = await response.json();
+  }
+  function formatDate(iso) {
+    return iso ? new Date(iso).toLocaleString('uk-UA', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+  }
+  function showToast(message, type) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message; toast.className = 'show ' + type;
+    clearTimeout(toast._timer); toast._timer = setTimeout(() => { toast.className = ''; }, 3000);
+  }
+  async function savePermissions(username, permissions, button) {
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}/permissions`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ permissions }) });
+      const data = await response.json();
+      if (!response.ok) { showToast(data.error || 'Request failed', 'err'); button.disabled = false; return; }
+      showToast(`Permissions for ${username} updated`, 'ok'); renderUsers();
+    } catch { showToast('Network error', 'err'); button.disabled = false; }
+  }
+  async function deleteUser(username, button) {
+    if (!confirm(`Delete user "${username}"?`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}`, { method:'DELETE' });
+      const data = await response.json();
+      if (!response.ok) { showToast(data.error || 'Request failed', 'err'); button.disabled = false; return; }
+      showToast(`User "${username}" deleted`, 'ok'); renderUsers();
+    } catch { showToast('Network error', 'err'); button.disabled = false; }
+  }
+  async function renderUsers() {
+    const tbody = document.getElementById('usersBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="loading">Loading directory…</td></tr>';
+    const response = await fetch('/api/users');
+    if (!response.ok) { tbody.innerHTML = '<tr><td colspan="4" class="loading">Unable to load directory</td></tr>'; return; }
+    const users = await response.json();
+    tbody.innerHTML = '';
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="4" class="loading">No users found</td></tr>'; return; }
+    users.forEach(user => {
+      const isSelf = user.username === currentUser.username;
+      const row = document.createElement('tr');
+      row.innerHTML = `<td class="username-cell">${escHtml(user.username)}${isSelf ? ' <span class="muted">(you)</span>' : ''}</td><td><div class="permission-list"></div><button class="btn primary save-permissions">SAVE PERMISSIONS</button></td><td class="date-cell">${formatDate(user.createdAt)}</td><td class="actions"></td>`;
+      const list = row.querySelector('.permission-list'), save = row.querySelector('.save-permissions'), selected = new Set(user.permissions || []);
+      Object.entries(permissionLabels).forEach(([key, label]) => {
+        const item = document.createElement('label'); item.className = 'permission' + (selected.has(key) ? ' active' : '');
+        item.innerHTML = `<input type="checkbox" ${selected.has(key) ? 'checked' : ''}>${label}`;
+        item.querySelector('input').addEventListener('change', event => { item.classList.toggle('active', event.target.checked); save.classList.add('visible'); });
+        list.appendChild(item);
+      });
+      save.addEventListener('click', () => savePermissions(user.username, Array.from(list.querySelectorAll('input:checked')).map(input => Object.keys(permissionLabels)[Array.from(list.querySelectorAll('input')).indexOf(input)]), save));
+      const actions = row.querySelector('.actions');
+      if (!isSelf) { const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'DELETE'; del.addEventListener('click', () => deleteUser(user.username, del)); actions.appendChild(del); }
+      else actions.innerHTML = '<span class="muted">—</span>';
+      tbody.appendChild(row);
     });
-    const data = await r.json();
-    if (!r.ok) { showToast(data.error || 'Помилка', 'err'); btn.disabled = false; return; }
-    showToast(`Роль ${username} змінено на «${role}»`, 'ok');
-    renderUsers();
-  } catch {
-    showToast('Помилка мережі', 'err');
-    btn.disabled = false;
   }
-}
-
-function getRoleLabel(role) {
-  if (role === 'admin') return 'Адмін';
-  if (role === 'viewer') return 'Переглядач';
-  return 'Користувач';
-}
-
-function getRoleBadgeClass(role) {
-  if (role === 'admin') return 'badge-admin';
-  if (role === 'viewer') return 'badge-viewer';
-  return 'badge-user';
-}
-
-async function deleteUser(username, btn) {
-  if (!confirm(`Видалити користувача «${username}»?`)) return;
-  btn.disabled = true;
-  try {
-    const r = await fetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
-    const data = await r.json();
-    if (!r.ok) { showToast(data.error || 'Помилка', 'err'); btn.disabled = false; return; }
-    showToast(`Користувача «${username}» видалено`, 'ok');
-    renderUsers();
-  } catch {
-    showToast('Помилка мережі', 'err');
-    btn.disabled = false;
-  }
-}
-
-async function renderUsers() {
-  const tbody = document.getElementById('usersBody');
-  tbody.innerHTML = '<tr><td colspan="4" class="loading">Завантаження…</td></tr>';
-
-  const r = await fetch('/api/users');
-  if (!r.ok) {
-    tbody.innerHTML = '<tr><td colspan="4" class="loading" style="color:#f85149">Помилка завантаження</td></tr>';
-    return;
-  }
-
-  const users = await r.json();
-  if (users.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="loading">Немає користувачів</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = '';
-  users.forEach(u => {
-    const isSelf = u.username === currentUser.username;
-    const isAdmin = u.role === 'admin';
-    const isViewer = u.role === 'viewer';
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="username-cell">${escHtml(u.username)}${isSelf ? ' <span style="font-size:10px;color:#8b949e">(ви)</span>' : ''}</td>
-      <td><span class="badge ${getRoleBadgeClass(u.role)}">${getRoleLabel(u.role)}</span></td>
-      <td class="date-cell">${formatDate(u.createdAt)}</td>
-      <td class="actions"></td>
-    `;
-
-    const actions = tr.querySelector('.actions');
-
-    if (!isSelf) {
-      if (!isAdmin) {
-        const viewerBtn = document.createElement('button');
-        viewerBtn.className = 'btn btn-promote';
-        viewerBtn.textContent = isViewer ? 'Переглядач' : 'Зробити переглядачем';
-        viewerBtn.disabled = isViewer;
-        viewerBtn.addEventListener('click', () => setRole(u.username, 'viewer', viewerBtn));
-        actions.appendChild(viewerBtn);
-
-        const adminBtn = document.createElement('button');
-        adminBtn.className = 'btn btn-promote';
-        adminBtn.textContent = 'Зробити адміном';
-        adminBtn.addEventListener('click', () => setRole(u.username, 'admin', adminBtn));
-        actions.appendChild(adminBtn);
-      } else {
-        const viewerBtn = document.createElement('button');
-        viewerBtn.className = 'btn btn-demote';
-        viewerBtn.textContent = 'Зробити переглядачем';
-        viewerBtn.addEventListener('click', () => setRole(u.username, 'viewer', viewerBtn));
-        actions.appendChild(viewerBtn);
-
-        const userBtn = document.createElement('button');
-        userBtn.className = 'btn btn-demote';
-        userBtn.textContent = 'Зробити користувачем';
-        userBtn.addEventListener('click', () => setRole(u.username, 'user', userBtn));
-        actions.appendChild(userBtn);
-      }
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'btn btn-delete';
-      delBtn.textContent = 'Видалити';
-      delBtn.addEventListener('click', () => deleteUser(u.username, delBtn));
-      actions.appendChild(delBtn);
-    } else {
-      actions.innerHTML = '<span style="font-size:12px;color:#484f58">—</span>';
-    }
-
-    tbody.appendChild(tr);
-  });
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-(async () => {
-  await loadMe();
-  await renderUsers();
-})();
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  (async () => { await loadMe(); await renderUsers(); })();
 </script>
 </body>
 </html>
