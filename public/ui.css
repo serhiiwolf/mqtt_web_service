@@ -73,6 +73,8 @@ button, input, select { font: inherit; }
 .site-user { color: var(--muted); font: 10px "JetBrains Mono", monospace; }
 .site-logout { color: var(--muted); font-size: 10px; padding: 3px 7px; border: 1px solid var(--line); }
 .site-logout:hover { color: var(--orange); border-color: var(--orange); }
+.site-login { color: var(--orange); font-size: 10px; padding: 3px 7px; border: 1px solid var(--orange); }
+.site-login:hover { color: var(--text); border-color: var(--text); }
 .site-menu-toggle { display: none; margin-left: auto; border: 1px solid var(--line); background: transparent; color: var(--text); padding: 5px 8px; }
 .site-mobile-menu { display: none; }
 

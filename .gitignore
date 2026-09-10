@@ -1,6 +1,6 @@
 node_modules/
 .node-red/*
-!.node-red/flows.json
+.node-red/flows.json
 !.node-red/.gitignore
 users.json
 users.json.migrated
