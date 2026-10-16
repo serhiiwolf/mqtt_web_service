@@ -9,6 +9,10 @@
   function link(href, text, current) {
     var a = document.createElement('a');
     a.href = href; a.textContent = text; a.className = 'nav-link';
+    if (href.startsWith('http://') || href.startsWith('https://')) {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    }
     if (location.pathname === href) a.style.color = '#e6edf7';
     if (current) a.setAttribute('aria-current', 'page');
     return a;
@@ -32,9 +36,16 @@
         (item[0] === '/admin' && perms.indexOf('view:admin') !== -1) ||
         (item[0] === '/nodes/ui' && perms.indexOf('view:nodes_ui') !== -1);
     });
+
+    if (Array.isArray(user.navPages)) {
+      user.navPages.forEach(function (page) {
+        allowed.push([page.path, page.title.toUpperCase()]);
+      });
+    }
+
     var navLinks = document.createElement('div'); navLinks.className = 'nav-links';
     allowed.forEach(function (item) { navLinks.appendChild(link(item[0], item[1])); });
-    var state = document.createElement('span'); state.className = 'state'; state.textContent = '● SESSION ' + (user.username || 'OK'); wrap.appendChild(state);
+    var state = document.createElement('span'); state.className = 'state'; state.textContent = '● SESSION ' + (user.username || 'OK');
     var button = document.createElement('button'); button.type = 'button'; button.className = 'menu-btn'; button.textContent = '☰';
     button.addEventListener('click', function (event) { event.stopPropagation(); navLinks.classList.toggle('open'); });
     wrap.appendChild(navLinks); wrap.appendChild(state); wrap.appendChild(button); toolbar.appendChild(wrap);
@@ -46,7 +57,7 @@
       var timer = setInterval(function () {
         var toolbar = document.querySelector('.red-ui-header-toolbar');
         if (toolbar) { clearInterval(timer); mount(user, toolbar); }
-        if (++attempts > 20) clearInterval(timer);
+        if (++attempts > 60) clearInterval(timer);
       }, 250);
     }).catch(function () {});
   }

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -28,7 +28,7 @@
     <div class="device-banner"><span class="led"></span><strong>REGISTRATION CHANNEL READY</strong><span class="muted">Passwords are encrypted at rest and shown only on request.</span></div>
     <section class="metric-grid"><article class="metric"><span class="metric-label">Credential store</span><strong class="metric-value green">READY</strong></article><article class="metric"><span class="metric-label">Protocol</span><strong class="metric-value cyan">MQTT</strong></article><article class="metric"><span class="metric-label">Auth mode</span><strong class="metric-value orange">PASSWORD</strong></article><article class="metric"><span class="metric-label">Transport</span><strong class="metric-value green">TLS/WS</strong></article></section>
     <div class="device-layout">
-      <div class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Register device credential</h2><span class="muted mono">NEW CLIENT</span></header><div class="panel-body"><form id="createForm" class="register-form"><input id="deviceUsername" class="control mono" placeholder="device-01" minlength="3" maxlength="64" required><button class="btn primary" type="submit">CREATE</button></form><div id="notice" class="notice"></div></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Credentials / provisioned clients</h2><span class="badge info">ENCRYPTED</span></header><div class="device-table"><table><thead><tr><th>Username</th><th>Password</th><th>Created</th><th>Actions</th></tr></thead><tbody id="devices"><tr><td colspan="4" class="empty">Завантаження…</td></tr></tbody></table></div></section></div>
+      <div class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Register device credential</h2><span class="muted mono">NEW CLIENT</span></header><div class="panel-body"><form id="createForm" class="register-form"><input id="deviceUsername" class="control mono" placeholder="device-01" minlength="3" maxlength="64" required><button class="btn primary" type="submit">CREATE</button></form><div id="notice" class="notice"></div></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Credentials / provisioned clients</h2><span class="badge info">ENCRYPTED</span></header><div class="device-table"><table><thead><tr><th>Username</th><th>Password</th><th>Created</th><th>Actions</th></tr></thead><tbody id="devices"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table></div></section></div>
       <aside class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Client helper</h2></header><div class="panel-body helper">Use the generated username and password in your MQTT client.<code>host  localhost<br>port  1883<br>protocol mqtt</code><p>WebSocket clients use <span class="mono">ws://host:3000/mqtt</span>.</p></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Credential policy</h2></header><div class="panel-body"><div class="status-row"><span class="status-label">USERNAME</span><span class="status-value">3–64 CHARS</span></div><div class="status-row"><span class="status-label">PASSWORD</span><span class="status-value">RANDOM</span></div><div class="status-row"><span class="status-label">REVEAL</span><span class="status-value warn">ON DEMAND</span></div></div></section></aside>
     </div>
   </main><script>
@@ -42,7 +42,7 @@
     body.innerHTML = devices.length ? '' : '<tr><td colspan="4" class="empty">No devices provisioned</td></tr>';
     devices.forEach(device => {
       const row = document.createElement('tr');
-      row.innerHTML = `<td class="mono">${esc(device.username)}</td><td class="password" data-username="${esc(device.username)}">••••••••</td><td class="muted mono">${new Date(device.createdAt).toLocaleString('uk-UA')}</td><td><button class="btn show" type="button">REVEAL</button> <button class="btn danger delete" type="button">DELETE</button></td>`;
+      row.innerHTML = `<td class="mono">${esc(device.username)}</td><td class="password" data-username="${esc(device.username)}">••••••••</td><td class="muted mono">${new Date(device.createdAt).toLocaleString('en-US')}</td><td><button class="btn show" type="button">REVEAL</button> <button class="btn danger delete" type="button">DELETE</button></td>`;
       const passwordCell = row.querySelector('.password');
       const showButton = row.querySelector('.show');
       let revealedPassword = null;

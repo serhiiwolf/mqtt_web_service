@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Вхід — Node-RED MQTT</title>
+  <title>Sign In — Node-RED MQTT</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -41,16 +41,16 @@
   <main class="auth-stage">
     <section class="auth-panel">
       <header class="auth-bar"><span class="auth-mark">NR</span><div><strong>NODE-RED MQTT</strong><div class="auth-kicker">AUTHENTICATION CONSOLE // 01</div></div></header>
-      <h1 class="auth-heading">Вхід до системи</h1>
-      <p class="auth-copy">Авторизуйтеся для доступу до control plane.</p>
+      <h1 class="auth-heading">Sign In</h1>
+      <p class="auth-copy">Authenticate to access the control plane.</p>
       <div id="errorBox" class="auth-error hidden"></div>
       <form id="loginForm">
-        <div class="auth-field"><label for="username">Ім'я користувача</label><input type="text" id="username" name="username" placeholder="operator" autocomplete="username" required></div>
-        <div class="auth-field"><label for="password">Пароль</label><input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required></div>
-        <button type="submit" class="btn primary auth-submit" id="submitBtn">УВІЙТИ</button>
+        <div class="auth-field"><label for="username">Username</label><input type="text" id="username" name="username" placeholder="operator" autocomplete="username" required></div>
+        <div class="auth-field"><label for="password">Password</label><input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required></div>
+        <button type="submit" class="btn primary auth-submit" id="submitBtn">SIGN IN</button>
       </form>
-      <div class="auth-or">або</div>
-      <p class="auth-foot">Немає акаунту? <a href="/register">Зареєструватися</a></p>
+      <div class="auth-or">or</div>
+      <p class="auth-foot">Don't have an account? <a href="/register">Register</a></p>
     </section>
   </main>
   <script>
@@ -61,7 +61,7 @@
       event.preventDefault();
       errorBox.classList.add('hidden');
       submitBtn.disabled = true;
-      submitBtn.textContent = 'ПЕРЕВІРКА...';
+      submitBtn.textContent = 'AUTHENTICATING...';
       try {
         const response = await fetch('/api/login', {
           method: 'POST',
@@ -76,16 +76,16 @@
           errorBox.textContent = data.error;
           errorBox.classList.remove('hidden');
           submitBtn.disabled = false;
-          submitBtn.textContent = 'УВІЙТИ';
+          submitBtn.textContent = 'SIGN IN';
         } else {
-          submitBtn.textContent = 'ДОСТУП ДОЗВОЛЕНО';
+          submitBtn.textContent = 'ACCESS GRANTED';
           location.href = data.redirectTo || '/dashboard';
         }
       } catch {
-        errorBox.textContent = 'Помилка зʼєднання з сервером';
+        errorBox.textContent = 'Server connection error';
         errorBox.classList.remove('hidden');
         submitBtn.disabled = false;
-        submitBtn.textContent = 'УВІЙТИ';
+        submitBtn.textContent = 'SIGN IN';
       }
     });
   </script>

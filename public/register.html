@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Реєстрація — Node-RED MQTT</title>
+  <title>Register — Node-RED MQTT</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { theme: { extend: {
@@ -41,17 +41,17 @@
   <main class="auth-stage">
     <section class="auth-panel">
       <header class="auth-bar"><span class="auth-mark">NR</span><div><strong>NODE-RED MQTT</strong><div class="auth-kicker">IDENTITY PROVISIONING // 02</div></div></header>
-      <h1 class="auth-heading">Реєстрація</h1>
-      <p class="auth-copy">Створіть обліковий запис оператора.</p>
+      <h1 class="auth-heading">Register</h1>
+      <p class="auth-copy">Create an operator account.</p>
       <div id="errorBox" class="auth-error hidden"></div>
       <form id="regForm">
-        <div class="auth-field"><label for="username">Ім'я користувача</label><input type="text" id="username" name="username" placeholder="operator" minlength="3" maxlength="32" required></div>
-        <div class="auth-field"><label for="password">Пароль <span class="muted" style="float:right">МІН. 6 СИМВ.</span></label><input type="password" id="password" name="password" minlength="6" required><div class="strength"><div id="strengthFill" style="width:0"></div></div><div id="strengthText" class="muted"></div></div>
-        <div class="auth-field"><label for="password2">Підтвердження паролю</label><input type="password" id="password2" name="password2" required></div>
-        <button type="submit" class="btn primary auth-submit" id="submitBtn">СТВОРИТИ АКАУНТ</button>
+        <div class="auth-field"><label for="username">Username</label><input type="text" id="username" name="username" placeholder="operator" minlength="3" maxlength="32" required></div>
+        <div class="auth-field"><label for="password">Password <span class="muted" style="float:right">MIN. 6 CHARS</span></label><input type="password" id="password" name="password" minlength="6" required><div class="strength"><div id="strengthFill" style="width:0"></div></div><div id="strengthText" class="muted"></div></div>
+        <div class="auth-field"><label for="password2">Confirm Password</label><input type="password" id="password2" name="password2" required></div>
+        <button type="submit" class="btn primary auth-submit" id="submitBtn">CREATE ACCOUNT</button>
       </form>
-      <div class="auth-or">або</div>
-      <p class="auth-foot">Вже маєте акаунт? <a href="/login">Увійти</a></p>
+      <div class="auth-or">or</div>
+      <p class="auth-foot">Already have an account? <a href="/login">Sign In</a></p>
     </section>
   </main>
   <script>
@@ -62,8 +62,8 @@
     const errorBox = document.getElementById('errorBox');
     const submitBtn = document.getElementById('submitBtn');
     const levels = [
-      ['#ff5964', 'Дуже слабкий'], ['#ffb347', 'Слабкий'], ['#ff7a18', 'Середній'],
-      ['#38d996', 'Надійний'], ['#20c8e8', 'Дуже надійний']
+      ['#ff5964', 'Very Weak'], ['#ffb347', 'Weak'], ['#ff7a18', 'Fair'],
+      ['#38d996', 'Strong'], ['#20c8e8', 'Very Strong']
     ];
     pwInput.oninput = () => {
       const value = pwInput.value;
@@ -77,15 +77,15 @@
     document.getElementById('regForm').onsubmit = async event => {
       event.preventDefault();
       errorBox.classList.add('hidden');
-      if (pwInput.value !== pw2Input.value) { errorBox.textContent = 'Паролі не збігаються'; errorBox.classList.remove('hidden'); return; }
+      if (pwInput.value !== pw2Input.value) { errorBox.textContent = 'Passwords do not match'; errorBox.classList.remove('hidden'); return; }
       submitBtn.disabled = true;
-      submitBtn.textContent = 'РЕЄСТРАЦІЯ...';
+      submitBtn.textContent = 'REGISTERING...';
       try {
         const response = await fetch('/api/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: document.getElementById('username').value.trim(), password: pwInput.value }) });
         const data = await response.json();
-        if (data.error) { errorBox.textContent = data.error; errorBox.classList.remove('hidden'); submitBtn.disabled = false; submitBtn.textContent = 'СТВОРИТИ АКАУНТ'; }
-        else { submitBtn.textContent = 'ГОТОВО'; location.href = data.redirectTo || '/dashboard'; }
-      } catch { errorBox.textContent = 'Помилка зʼєднання з сервером'; errorBox.classList.remove('hidden'); submitBtn.disabled = false; submitBtn.textContent = 'СТВОРИТИ АКАУНТ'; }
+        if (data.error) { errorBox.textContent = data.error; errorBox.classList.remove('hidden'); submitBtn.disabled = false; submitBtn.textContent = 'CREATE ACCOUNT'; }
+        else { submitBtn.textContent = 'DONE'; location.href = data.redirectTo || '/dashboard'; }
+      } catch { errorBox.textContent = 'Server connection error'; errorBox.classList.remove('hidden'); submitBtn.disabled = false; submitBtn.textContent = 'CREATE ACCOUNT'; }
     };
   </script>
 </body>

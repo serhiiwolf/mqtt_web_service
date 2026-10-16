@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -46,7 +46,7 @@
   <script src="/site-nav.js"></script>
   <main class="page-shell">
     <header class="page-header">
-      <div><p class="eyebrow">SCADA / MQTT CONTROL PLANE</p><h1 class="page-title">Огляд системи</h1><p class="page-subtitle">Live telemetry, broker health and Node-RED runtime status.</p></div>
+      <div><p class="eyebrow">SCADA / MQTT CONTROL PLANE</p><h1 class="page-title">System Overview</h1><p class="page-subtitle">Live telemetry, broker health and Node-RED runtime status.</p></div>
       <div><span class="badge ok"><span class="led"></span>SESSION ACTIVE</span></div>
     </header>
     <section class="metric-grid" aria-label="System metrics">
@@ -67,13 +67,13 @@
         </section>
         <section class="panel">
           <header class="panel-head"><h2 class="panel-title">Quick publisher</h2><span class="muted mono">MQTT CLIENT TOOL</span></header>
-          <div class="panel-body"><div class="publisher"><input id="publishTopic" class="control mono" placeholder="topic / sensor/value"><input id="publishPayload" class="control mono" placeholder="payload"><button id="publishBtn" class="btn primary" type="button">PUBLISH</button></div><p id="publishStatus" class="muted mono" style="margin:7px 0 0">Публікація через авторизований dashboard MQTT-клієнт.</p></div>
+          <div class="panel-body"><div class="publisher"><input id="publishTopic" class="control mono" placeholder="topic / sensor/value"><input id="publishPayload" class="control mono" placeholder="payload"><button id="publishBtn" class="btn primary" type="button">PUBLISH</button></div><p id="publishStatus" class="muted mono" style="margin:7px 0 0">Publish via authorized dashboard MQTT client.</p></div>
         </section>
       </div>
       <aside class="dashboard-stack">
         <section class="panel device-status-panel">
           <header class="panel-head"><h2 class="panel-title">MQTT devices</h2><span id="deviceSummary" class="badge ok">CHECKING</span></header>
-          <div id="deviceStatusList" class="panel-body device-status-list"><div class="muted mono">Завантаження пристроїв...</div></div>
+          <div id="deviceStatusList" class="panel-body device-status-list"><div class="muted mono">Loading devices...</div></div>
           <div class="panel-body" style="padding-top:0"><div class="status-row"><span class="status-label">AUTH SESSION</span><span id="sessionStatus" class="status-value">CHECKING</span></div></div>
         </section>
         <section class="panel">
@@ -89,18 +89,18 @@
   </main>
   <script>
     const esc = value => String(value ?? '').replace(/[&<>"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[char]));
-    const time = value => { try { return new Date(value).toLocaleTimeString('uk-UA', { hour12:false }); } catch { return '—'; } };
+    const time = value => { try { return new Date(value).toLocaleTimeString('en-US', { hour12:false }); } catch { return '—'; } };
     const duration = value => { const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000)); const days = Math.floor(seconds / 86400); const hours = Math.floor(seconds % 86400 / 3600); const minutes = Math.floor(seconds % 3600 / 60); const secs = seconds % 60; return (days ? days + 'd ' : '') + String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':' + String(secs).padStart(2, '0'); };
     function renderDeviceStatuses(devices) {
       const list = document.getElementById('deviceStatusList');
       const online = devices.filter(device => device.connected).length;
       document.getElementById('deviceSummary').textContent = online + '/' + devices.length + ' ONLINE';
-      if (!devices.length) { list.innerHTML = '<div class="muted mono">Немає зареєстрованих пристроїв</div>'; return; }
+      if (!devices.length) { list.innerHTML = '<div class="muted mono">No registered devices</div>'; return; }
       list.innerHTML = devices.map(device => {
         const isOnline = device.connected;
         const since = isOnline ? device.connectedAt : device.disconnectedAt;
         const label = isOnline ? 'ONLINE' : (device.connectedAt ? 'OFFLINE' : 'NO DATA');
-        const detail = since ? (isOnline ? 'підключений ' : 'відсутній ') + duration(since) : 'ще не підключався';
+        const detail = since ? (isOnline ? 'connected ' : 'offline ') + duration(since) : 'never connected';
         return '<div class="device-status"><div class="device-status-head"><span class="device-status-name">' + esc(device.username) + '</span><span class="badge ' + (isOnline ? 'ok' : 'warn') + '"><span class="led"></span>' + label + '</span></div><div class="device-status-meta">' + detail + ' // ' + (since ? esc(time(since)) : '—') + '</div></div>';
       }).join('');
     }
@@ -114,9 +114,9 @@
       const status = document.getElementById('publishStatus');
       const topic = document.getElementById('publishTopic').value.trim();
       const payload = document.getElementById('publishPayload').value;
-      if (!topic) { status.textContent = 'Вкажіть topic.'; return; }
+      if (!topic) { status.textContent = 'Please specify a topic.'; return; }
       button.disabled = true;
-      status.textContent = 'Публікація...';
+      status.textContent = 'Publishing...';
       try {
         const response = await fetch('/api/mqtt/publish', {
           method: 'POST',
@@ -124,8 +124,8 @@
           body: JSON.stringify({ topic, payload })
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Публікація не виконана');
-        status.textContent = 'Опубліковано: ' + result.topic;
+        if (!response.ok) throw new Error(result.error || 'Publish failed');
+        status.textContent = 'Published: ' + result.topic;
         document.getElementById('publishPayload').value = '';
         hydrateDashboard();
       } catch (error) {

@@ -60,6 +60,13 @@ db.exec(`
     payload TEXT,
     qos INTEGER
   );
+  CREATE TABLE IF NOT EXISTS nav_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    permission_key TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+  );
 `);
 const mqttLogColumns = db.prepare('PRAGMA table_info(mqtt_event_logs)').all().map(column => column.name);
 if (!mqttLogColumns.includes('username')) {
@@ -70,6 +77,15 @@ const ALL_PERMISSIONS = [
   'view:dashboard', 'view:nodes_ui', 'view:admin', 'view:mqtt_logs',
   'manage:users', 'grant:permissions', 'manage:devices', 'access:editor'
 ];
+
+function getAllNavPages() {
+  return db.prepare('SELECT id, title, path, permission_key, created_at AS createdAt FROM nav_pages ORDER BY id ASC').all();
+}
+
+function getAllValidPermissions() {
+  const dynamic = getAllNavPages().map(page => page.permission_key);
+  return [...new Set([...ALL_PERMISSIONS, ...dynamic])];
+}
 const ROLE_PERMISSIONS = {
   user: ['view:dashboard'],
   viewer: ['view:nodes_ui'],
@@ -337,8 +353,6 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 function getLandingPathForUser(user) {
-  if (user && user.permissions.includes('access:editor')) return '/editor';
-  if (user && user.permissions.includes('view:nodes_ui')) return '/nodes/ui';
   return '/dashboard';
 }
 
@@ -384,12 +398,12 @@ app.get('/dashboard', (req, res) => {
 app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password)
-    return res.json({ error: 'Заповніть всі поля' });
+    return res.json({ error: 'All fields are required' });
   if (password.length < 6)
-    return res.json({ error: 'Пароль — мінімум 6 символів' });
+    return res.json({ error: 'Password must be at least 6 characters' });
 
   if (getUser(username))
-    return res.json({ error: 'Користувач із таким іменем вже існує' });
+    return res.json({ error: 'User already exists' });
 
   const hash = await bcrypt.hash(password, 10);
   db.prepare(`
@@ -404,15 +418,15 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password)
-    return res.json({ error: 'Заповніть всі поля' });
+    return res.json({ error: 'All fields are required' });
 
   const user = getUserWithPassword(username);
   if (!user)
-    return res.json({ error: 'Невірний логін або пароль' });
+    return res.json({ error: 'Invalid username or password' });
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid)
-    return res.json({ error: 'Невірний логін або пароль' });
+    return res.json({ error: 'Invalid username or password' });
 
   const profile = userFromRow(user);
   req.session.user = { username };
@@ -427,7 +441,15 @@ app.post('/logout', (req, res) => {
 app.get('/api/me', (req, res) => {
   if (req.session.user) {
     const user = getUser(req.session.user.username);
-    if (user) return res.json(user);
+    if (user) {
+      const allNavPages = getAllNavPages();
+      const userNavPages = allNavPages.filter(p => user.permissions.includes(p.permission_key));
+      return res.json({
+        ...user,
+        navPages: userNavPages,
+        allNavPages: user.permissions.includes('view:admin') ? allNavPages : undefined
+      });
+    }
   }
   res.status(401).json({ error: 'not authenticated' });
 });
@@ -444,23 +466,23 @@ app.post('/api/mqtt/publish', requirePermission('view:dashboard'), (req, res) =>
   const topic = typeof req.body.topic === 'string' ? req.body.topic.trim() : '';
   const payload = typeof req.body.payload === 'string' ? req.body.payload : '';
   if (!topic || topic.includes('#') || topic.includes('+') || topic.length > 65535) {
-    return res.status(400).json({ error: 'Вкажіть коректний MQTT topic без wildcard-символів' });
+    return res.status(400).json({ error: 'Specify a valid MQTT topic without wildcard characters' });
   }
   if (Buffer.byteLength(payload, 'utf8') > 1024 * 1024) {
-    return res.status(400).json({ error: 'Payload не може перевищувати 1 MiB' });
+    return res.status(400).json({ error: 'Payload must not exceed 1 MiB' });
   }
 
   const clientId = `dashboard:${req.currentUser.username}`;
   const packet = { topic, payload: Buffer.from(payload, 'utf8'), qos: 0, retain: false };
   try {
     aedes.publish(packet, (error) => {
-      if (error) return res.status(502).json({ error: 'Не вдалося опублікувати MQTT повідомлення' });
+      if (error) return res.status(502).json({ error: 'Failed to publish MQTT message' });
       pushMqttEvent({ type: 'publish', clientId, topic, payload: clipPayload(payload) });
       res.json({ success: true, topic, payload });
     });
   } catch (error) {
     console.error('[MQTT] dashboard publish failed:', error);
-    res.status(502).json({ error: 'Не вдалося опублікувати MQTT повідомлення' });
+    res.status(502).json({ error: 'Failed to publish MQTT message' });
   }
 });
 
@@ -472,7 +494,7 @@ function requirePermission(permission) {
       req.currentUser = user;
       return next();
     }
-    res.status(403).json({ error: 'Доступ заборонено' });
+    res.status(403).json({ error: 'Access denied' });
   };
 }
 
@@ -486,7 +508,7 @@ function requireDashboardViewerOrAdmin(req, res, next) {
   if (user.permissions.includes('view:nodes_ui')) return next();
 
   if (isBrowserLikeRequest(req)) {
-    return res.status(403).json({ error: 'Доступ заборонено' });
+    return res.status(403).json({ error: 'Access denied' });
   }
   return res.redirect('/dashboard');
 }
@@ -530,28 +552,105 @@ app.get('/api/users', requirePermission('view:admin'), (req, res) => {
 app.patch('/api/users/:username/permissions', requirePermission('grant:permissions'), (req, res) => {
   const { username } = req.params;
   const permissions = Array.isArray(req.body.permissions) ? [...new Set(req.body.permissions)] : null;
-  if (!permissions || permissions.some(permission => !ALL_PERMISSIONS.includes(permission))) {
-    return res.status(400).json({ error: 'Невалідні права' });
+  const validPermissions = getAllValidPermissions();
+  if (!permissions || permissions.some(permission => !validPermissions.includes(permission))) {
+    return res.status(400).json({ error: 'Invalid permissions' });
   }
   const user = getUser(username);
   if (!user)
-    return res.status(404).json({ error: 'Користувача не знайдено' });
+    return res.status(404).json({ error: 'User not found' });
   if (username === req.session.user.username && !permissions.includes('grant:permissions')) {
-    return res.status(400).json({ error: 'Не можна забрати власні права керування' });
+    return res.status(400).json({ error: 'Cannot revoke own administrative permissions' });
   }
   db.prepare('UPDATE users SET permissions = ? WHERE username = ?').run(JSON.stringify(permissions), username);
+  res.json({ success: true });
+});
+
+// ── Navigation Pages API ───────────────────────────────────────────────────────
+app.get('/api/nav-pages', (req, res) => {
+  const user = req.session.user && getUser(req.session.user.username);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const pages = getAllNavPages();
+  if (user.permissions.includes('view:admin') || user.permissions.includes('grant:permissions')) {
+    return res.json(pages);
+  }
+  res.json(pages.filter(p => user.permissions.includes(p.permission_key)));
+});
+
+app.post('/api/nav-pages', requirePermission('grant:permissions'), (req, res) => {
+  const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+  let pagePath = typeof req.body.path === 'string' ? req.body.path.trim() : '';
+  if (!title || title.length > 64) {
+    return res.status(400).json({ error: 'Page title is required (up to 64 characters)' });
+  }
+  if (!pagePath || pagePath.length > 255) {
+    return res.status(400).json({ error: 'Valid page path or URL is required' });
+  }
+  if (!pagePath.startsWith('/') && !pagePath.startsWith('http://') && !pagePath.startsWith('https://')) {
+    pagePath = '/' + pagePath;
+  }
+
+  const existing = db.prepare('SELECT id FROM nav_pages WHERE path = ?').get(pagePath);
+  if (existing) {
+    return res.status(409).json({ error: 'A navigation page with this path already exists' });
+  }
+
+  const tempKey = 'view:page_' + Date.now();
+  const insertResult = db.prepare(`
+    INSERT INTO nav_pages (title, path, permission_key, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(title, pagePath, tempKey, new Date().toISOString());
+
+  const pageId = insertResult.lastInsertRowid;
+  const permissionKey = `view:page_${pageId}`;
+  db.prepare('UPDATE nav_pages SET permission_key = ? WHERE id = ?').run(permissionKey, pageId);
+
+  // Automatically grant permission to users with grant:permissions or view:admin
+  const usersWithGrant = db.prepare('SELECT username, permissions FROM users').all();
+  usersWithGrant.forEach(u => {
+    const perms = parsePermissions(u.permissions);
+    if (perms.includes('grant:permissions') || perms.includes('view:admin') || u.username === req.session.user.username) {
+      if (!perms.includes(permissionKey)) {
+        perms.push(permissionKey);
+        db.prepare('UPDATE users SET permissions = ? WHERE username = ?').run(JSON.stringify(perms), u.username);
+      }
+    }
+  });
+
+  const createdPage = db.prepare('SELECT id, title, path, permission_key, created_at AS createdAt FROM nav_pages WHERE id = ?').get(pageId);
+  res.status(201).json(createdPage);
+});
+
+app.delete('/api/nav-pages/:id', requirePermission('grant:permissions'), (req, res) => {
+  const pageId = Number(req.params.id);
+  const page = db.prepare('SELECT id, permission_key FROM nav_pages WHERE id = ?').get(pageId);
+  if (!page) {
+    return res.status(404).json({ error: 'Page not found' });
+  }
+
+  db.prepare('DELETE FROM nav_pages WHERE id = ?').run(pageId);
+
+  const allUsers = db.prepare('SELECT username, permissions FROM users').all();
+  allUsers.forEach(u => {
+    const perms = parsePermissions(u.permissions);
+    if (perms.includes(page.permission_key)) {
+      const filtered = perms.filter(p => p !== page.permission_key);
+      db.prepare('UPDATE users SET permissions = ? WHERE username = ?').run(JSON.stringify(filtered), u.username);
+    }
+  });
+
   res.json({ success: true });
 });
 
 app.patch('/api/users/:username/role', requirePermission('grant:permissions'), (req, res) => {
   const role = req.body.role;
   if (!Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, role)) {
-    return res.status(400).json({ error: 'Невалідна роль' });
+    return res.status(400).json({ error: 'Invalid role' });
   }
   const user = getUser(req.params.username);
-  if (!user) return res.status(404).json({ error: 'Користувача не знайдено' });
+  if (!user) return res.status(404).json({ error: 'User not found' });
   if (req.params.username === req.session.user.username && role !== 'admin') {
-    return res.status(400).json({ error: 'Не можна забрати власні права керування' });
+    return res.status(400).json({ error: 'Cannot revoke own administrative permissions' });
   }
   db.prepare('UPDATE users SET permissions = ? WHERE username = ?')
     .run(JSON.stringify(permissionsForLegacyRole(role)), req.params.username);
@@ -561,9 +660,9 @@ app.patch('/api/users/:username/role', requirePermission('grant:permissions'), (
 app.delete('/api/users/:username', requirePermission('manage:users'), (req, res) => {
   const { username } = req.params;
   if (username === req.session.user.username)
-    return res.status(400).json({ error: 'Не можна видалити себе' });
+    return res.status(400).json({ error: 'Cannot delete your own account' });
   if (!getUser(username))
-    return res.status(404).json({ error: 'Користувача не знайдено' });
+    return res.status(404).json({ error: 'User not found' });
   db.prepare('DELETE FROM users WHERE username = ?').run(username);
   res.json({ success: true });
 });
@@ -571,10 +670,10 @@ app.delete('/api/users/:username', requirePermission('manage:users'), (req, res)
 app.post('/api/mqtt/devices', requirePermission('manage:devices'), (req, res) => {
   const { username } = req.body;
   if (!username || !/^[A-Za-z0-9._-]{3,64}$/.test(username)) {
-    return res.status(400).json({ error: 'Username пристрою має містити 3–64 дозволених символи' });
+    return res.status(400).json({ error: 'Device username must be 3–64 allowed characters' });
   }
   if (db.prepare('SELECT 1 FROM mqtt_devices WHERE username = ?').get(username)) {
-    return res.status(409).json({ error: 'Такий MQTT-пристрій вже існує' });
+    return res.status(409).json({ error: 'MQTT device already exists' });
   }
   const password = crypto.randomBytes(24).toString('base64url').slice(0, 16);
   db.prepare('INSERT INTO mqtt_devices (username, password_encrypted, created_at) VALUES (?, ?, ?)')
@@ -588,13 +687,13 @@ app.get('/api/mqtt/devices', requirePermission('manage:devices'), (req, res) => 
 
 app.get('/api/mqtt/devices/:username/password', requirePermission('manage:devices'), (req, res) => {
   const device = db.prepare('SELECT password_encrypted FROM mqtt_devices WHERE username = ?').get(req.params.username);
-  if (!device) return res.status(404).json({ error: 'Пристрій не знайдено' });
+  if (!device) return res.status(404).json({ error: 'Device not found' });
   res.json({ username: req.params.username, password: decryptDevicePassword(device.password_encrypted) });
 });
 
 app.delete('/api/mqtt/devices/:username', requirePermission('manage:devices'), (req, res) => {
   const result = db.prepare('DELETE FROM mqtt_devices WHERE username = ?').run(req.params.username);
-  if (!result.changes) return res.status(404).json({ error: 'Пристрій не знайдено' });
+  if (!result.changes) return res.status(404).json({ error: 'Device not found' });
   res.json({ success: true });
 });
 // ── Node-RED auth middleware ───────────────────────────────────────────────────
@@ -620,7 +719,7 @@ function requireAdminForEditor(req, res, next) {
   if (user.permissions.includes('access:editor')) return next();
 
   if (isBrowserLikeRequest(req)) {
-    return res.status(403).json({ error: 'Доступ заборонено' });
+    return res.status(403).json({ error: 'Access denied' });
   }
   return res.redirect(getLandingPathForUser(user));
 }

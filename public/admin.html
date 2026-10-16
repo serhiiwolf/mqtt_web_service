@@ -1,5 +1,5 @@
-﻿<!doctype html>
-<html lang="uk">
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,9 +12,11 @@
     .admin-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
     .admin-layout { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(260px,.75fr); gap:10px; }
     .table-wrap { overflow:auto; }
-    .permission-list { display:flex; flex-wrap:wrap; gap:4px; max-width:560px; }
+    .permission-list { display:flex; flex-wrap:wrap; gap:4px; max-width:580px; }
     .permission { display:inline-flex; align-items:center; gap:4px; padding:4px 6px; border:1px solid var(--line); color:var(--muted); background:#0c121c; font:9px "JetBrains Mono",monospace; cursor:pointer; }
     .permission.active { color:var(--green); border-color:rgba(56,217,150,.45); background:rgba(56,217,150,.08); }
+    .permission.custom-page { border-style:dashed; }
+    .permission.custom-page.active { color:var(--cyan); border-color:rgba(32,200,232,.45); background:rgba(32,200,232,.08); }
     .permission input { width:10px; height:10px; accent-color:var(--green); }
     .save-permissions { display:none; margin-top:7px; }
     .save-permissions.visible { display:inline-block; }
@@ -26,62 +28,193 @@
     .policy-card strong { display:block; font-size:10px; } .policy-card p { margin:3px 0 0; color:var(--muted); font:9px "JetBrains Mono",monospace; }
     .audit-line { display:flex; gap:7px; padding:7px 0; border-bottom:1px solid var(--line); color:var(--muted); font:9px "JetBrains Mono",monospace; }
     .audit-line:last-child { border-bottom:0; } .audit-line b { color:var(--text); font-weight:400; }
+    .page-form-grid { display:grid; grid-template-columns:1fr 1.2fr auto; gap:6px; margin-bottom:12px; }
     #toast { position:fixed; right:16px; bottom:16px; z-index:70; padding:9px 12px; border:1px solid var(--line-hi); background:#111823; color:var(--text); opacity:0; pointer-events:none; transition:opacity .2s; }
     #toast.show { opacity:1; } #toast.ok { color:var(--green); border-color:rgba(56,217,150,.5); } #toast.err { color:var(--red); border-color:rgba(255,89,100,.5); }
-    @media(max-width:850px) { .admin-layout { grid-template-columns:1fr; } .admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media(max-width:850px) { .admin-layout { grid-template-columns:1fr; } .admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .page-form-grid { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
   <nav><a href="/dashboard">Dashboard</a><a href="/admin/mqtt-logs">MQTT Logs</a><a href="/admin/mqtt-devices">MQTT Devices</a><a href="/admin">Users &amp; Access</a><a href="/nodes/ui">Node-RED UI</a><a href="/editor">Editor</a></nav>
   <script src="/site-nav.js"></script>
   <main class="page-shell">
-    <header class="page-header"><div><p class="eyebrow">SECURITY / RBAC CONTROL</p><h1 class="page-title">Users &amp; Access</h1><p class="page-subtitle">Зміни permissions застосовуються одразу, без повторного входу користувача.</p></div><span class="badge ok"><span class="led"></span>POLICY ENFORCED</span></header>
-    <section class="admin-stats"><article class="metric"><span class="metric-label">Identity store</span><strong class="metric-value green">ONLINE</strong></article><article class="metric"><span class="metric-label">Policy mode</span><strong class="metric-value cyan">RBAC</strong></article><article class="metric"><span class="metric-label">Session lock</span><strong class="metric-value orange">ACTIVE</strong></article><article class="metric"><span class="metric-label">Audit channel</span><strong class="metric-value green">READY</strong></article></section>
+    <header class="page-header"><div><p class="eyebrow">SECURITY / RBAC CONTROL</p><h1 class="page-title">Users &amp; Access</h1><p class="page-subtitle">Permission changes take effect immediately without requiring user re-login.</p></div><span class="badge ok"><span class="led"></span>POLICY ENFORCED</span></header>
+    <section class="admin-stats"><article class="metric"><span class="metric-label">Identity store</span><strong class="metric-value green">ONLINE</strong></article><article class="metric"><span class="metric-label">Policy mode</span><strong class="metric-value cyan">RBAC</strong></article><article class="metric"><span class="metric-label">Session lock</span><strong class="metric-value orange">ACTIVE</strong></article><article class="metric"><span class="metric-label">Dynamic nav</span><strong id="navPagesCount" class="metric-value green">0 PAGES</strong></article></section>
+    
     <div class="admin-layout">
-      <section class="panel"><header class="panel-head"><h2 class="panel-title">Users / permissions matrix</h2><span class="muted mono">LIVE DIRECTORY</span></header><div class="table-wrap"><table><thead><tr><th>Користувач</th><th>Права</th><th>Дата реєстрації</th><th>Дії</th></tr></thead><tbody id="usersBody"><tr><td colspan="4" class="loading">Завантаження…</td></tr></tbody></table></div></section>
-      <aside class="dashboard-stack"><section class="panel"><header class="panel-head"><h2 class="panel-title">Permission policy</h2></header><div class="panel-body" style="display:grid;gap:7px"><div class="policy-card green"><strong>VIEWER</strong><p>dashboard + node-red UI read access</p></div><div class="policy-card"><strong>OPERATOR</strong><p>MQTT logs and device telemetry</p></div><div class="policy-card orange"><strong>ADMIN</strong><p>users, grants, devices and editor</p></div></div></section><section class="panel"><header class="panel-head"><h2 class="panel-title">Audit feed</h2><span class="badge info">SECURE</span></header><div class="panel-body"><div class="audit-line"><span class="led" style="color:var(--green)"></span><b>Permission changes</b><span>IMMEDIATE</span></div><div class="audit-line"><span class="led" style="color:var(--cyan)"></span><b>Session validation</b><span>COOKIE</span></div><div class="audit-line"><span class="led" style="color:var(--orange)"></span><b>Self-lock guard</b><span>ACTIVE</span></div></div></section></aside>
+      <section class="panel"><header class="panel-head"><h2 class="panel-title">Users / permissions matrix</h2><span class="muted mono">LIVE DIRECTORY</span></header><div class="table-wrap"><table><thead><tr><th>User</th><th>Permissions</th><th>Registered Date</th><th>Actions</th></tr></thead><tbody id="usersBody"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></section>
+      <aside class="dashboard-stack">
+        <section class="panel"><header class="panel-head"><h2 class="panel-title">Permission policy</h2></header><div class="panel-body" style="display:grid;gap:7px"><div class="policy-card green"><strong>VIEWER</strong><p>dashboard + node-red UI read access</p></div><div class="policy-card"><strong>OPERATOR</strong><p>MQTT logs and device telemetry</p></div><div class="policy-card orange"><strong>ADMIN</strong><p>users, grants, devices and editor</p></div></div></section>
+        <section class="panel"><header class="panel-head"><h2 class="panel-title">Audit feed</h2><span class="badge info">SECURE</span></header><div class="panel-body"><div class="audit-line"><span class="led" style="color:var(--green)"></span><b>Permission changes</b><span>IMMEDIATE</span></div><div class="audit-line"><span class="led" style="color:var(--cyan)"></span><b>Session validation</b><span>COOKIE</span></div><div class="audit-line"><span class="led" style="color:var(--orange)"></span><b>Self-lock guard</b><span>ACTIVE</span></div></div></section>
+      </aside>
     </div>
+
+    <!-- Navigation Pages Management Section -->
+    <section class="panel" style="margin-top:12px">
+      <header class="panel-head">
+        <h2 class="panel-title">Custom Navigation Pages &amp; Access Controls</h2>
+        <span class="muted mono">CONFIGURE NAV BAR</span>
+      </header>
+      <div class="panel-body">
+        <p class="muted" style="margin:0 0 10px;font-size:11px">Add custom pages or external dashboards to the global navigation bar. Each page creates a granular permission item you can grant to specific users above.</p>
+        <form id="addPageForm" class="page-form-grid">
+          <input id="newPageTitle" class="control" placeholder="Page Title (e.g. Analytics, Grafana, Alarms)" required maxlength="64">
+          <input id="newPagePath" class="control mono" placeholder="Path / URL (e.g. /analytics or https://...)" required maxlength="255">
+          <button class="btn primary" type="submit">+ ADD TO NAV</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Page Title</th>
+                <th>Path / Target URL</th>
+                <th>Permission Key</th>
+                <th>Created</th>
+                <th style="width:90px">Action</th>
+              </tr>
+            </thead>
+            <tbody id="navPagesBody">
+              <tr><td colspan="5" class="loading">Loading navigation pages…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
-  <div id="toast"></div><script>
+  
+  <div id="toast"></div>
+  <script>
   let currentUser = null;
-  const permissionLabels = {
-    'view:dashboard': 'Dashboard', 'view:nodes_ui': 'Node-RED UI',
-    'view:admin': 'Users & Access', 'view:mqtt_logs': 'MQTT Logs',
-    'manage:users': 'Manage users', 'grant:permissions': 'Grant permissions',
-    'manage:devices': 'MQTT Devices', 'access:editor': 'Editor'
+  let dynamicNavPages = [];
+
+  const basePermissionLabels = {
+    'view:dashboard': 'Dashboard',
+    'view:nodes_ui': 'Node-RED UI',
+    'view:admin': 'Users & Access',
+    'view:mqtt_logs': 'MQTT Logs',
+    'manage:users': 'Manage users',
+    'grant:permissions': 'Grant permissions',
+    'manage:devices': 'MQTT Devices',
+    'access:editor': 'Editor'
   };
+
+  function getActivePermissionLabels() {
+    const labels = Object.assign({}, basePermissionLabels);
+    dynamicNavPages.forEach(p => {
+      labels[p.permission_key] = 'Page: ' + p.title;
+    });
+    return labels;
+  }
+
   async function loadMe() {
     const response = await fetch('/api/me');
     if (!response.ok) { location.href = '/login'; return; }
     currentUser = await response.json();
   }
+
   function formatDate(iso) {
-    return iso ? new Date(iso).toLocaleString('uk-UA', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    return iso ? new Date(iso).toLocaleString('en-US', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
   }
+
   function showToast(message, type) {
     const toast = document.getElementById('toast');
     toast.textContent = message; toast.className = 'show ' + type;
     clearTimeout(toast._timer); toast._timer = setTimeout(() => { toast.className = ''; }, 3000);
   }
+
+  async function loadNavPages() {
+    const tbody = document.getElementById('navPagesBody');
+    try {
+      const response = await fetch('/api/nav-pages');
+      if (!response.ok) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">Unable to load navigation pages</td></tr>';
+        return;
+      }
+      dynamicNavPages = await response.json();
+      document.getElementById('navPagesCount').textContent = dynamicNavPages.length + ' PAGES';
+      
+      if (!dynamicNavPages.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">No custom navigation pages added yet</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = dynamicNavPages.map(page => {
+        const isExt = page.path.startsWith('http://') || page.path.startsWith('https://');
+        return `
+          <tr>
+            <td class="mono"><strong>${escHtml(page.title)}</strong></td>
+            <td><a href="${escHtml(page.path)}" target="${isExt ? '_blank' : '_self'}" class="mono">${escHtml(page.path)}</a></td>
+            <td><span class="badge info">${escHtml(page.permission_key)}</span></td>
+            <td class="date-cell">${formatDate(page.createdAt)}</td>
+            <td><button class="btn danger delete-page" data-id="${page.id}">DELETE</button></td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('.delete-page').forEach(button => {
+        button.onclick = async () => {
+          const id = button.getAttribute('data-id');
+          if (!confirm('Remove this page from navigation? Permission will also be revoked from assigned users.')) return;
+          button.disabled = true;
+          try {
+            const res = await fetch('/api/nav-pages/' + encodeURIComponent(id), { method: 'DELETE' });
+            if (!res.ok) {
+              const err = await res.json();
+              showToast(err.error || 'Failed to delete page', 'err');
+              button.disabled = false;
+              return;
+            }
+            showToast('Page removed from navigation', 'ok');
+            await loadNavPages();
+            await renderUsers();
+            if (window.refreshSiteNav) window.refreshSiteNav();
+          } catch {
+            showToast('Network error', 'err');
+            button.disabled = false;
+          }
+        };
+      });
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Network error loading pages</td></tr>';
+    }
+  }
+
   async function savePermissions(username, permissions, button) {
     button.disabled = true;
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(username)}/permissions`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ permissions }) });
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}/permissions`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions })
+      });
       const data = await response.json();
       if (!response.ok) { showToast(data.error || 'Request failed', 'err'); button.disabled = false; return; }
-      showToast(`Permissions for ${username} updated`, 'ok'); renderUsers();
-    } catch { showToast('Network error', 'err'); button.disabled = false; }
+      showToast(`Permissions for ${username} updated`, 'ok');
+      await renderUsers();
+      if (username === currentUser.username && window.refreshSiteNav) {
+        window.refreshSiteNav();
+      }
+    } catch {
+      showToast('Network error', 'err');
+      button.disabled = false;
+    }
   }
+
   async function deleteUser(username, button) {
     if (!confirm(`Delete user "${username}"?`)) return;
     button.disabled = true;
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(username)}`, { method:'DELETE' });
+      const response = await fetch(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
       const data = await response.json();
       if (!response.ok) { showToast(data.error || 'Request failed', 'err'); button.disabled = false; return; }
-      showToast(`User "${username}" deleted`, 'ok'); renderUsers();
-    } catch { showToast('Network error', 'err'); button.disabled = false; }
+      showToast(`User "${username}" deleted`, 'ok');
+      renderUsers();
+    } catch {
+      showToast('Network error', 'err');
+      button.disabled = false;
+    }
   }
+
   async function renderUsers() {
     const tbody = document.getElementById('usersBody');
     tbody.innerHTML = '<tr><td colspan="4" class="loading">Loading directory…</td></tr>';
@@ -90,26 +223,87 @@
     const users = await response.json();
     tbody.innerHTML = '';
     if (!users.length) { tbody.innerHTML = '<tr><td colspan="4" class="loading">No users found</td></tr>'; return; }
+
+    const activeLabels = getActivePermissionLabels();
+
     users.forEach(user => {
       const isSelf = user.username === currentUser.username;
       const row = document.createElement('tr');
       row.innerHTML = `<td class="username-cell">${escHtml(user.username)}${isSelf ? ' <span class="muted">(you)</span>' : ''}</td><td><div class="permission-list"></div><button class="btn primary save-permissions">SAVE PERMISSIONS</button></td><td class="date-cell">${formatDate(user.createdAt)}</td><td class="actions"></td>`;
-      const list = row.querySelector('.permission-list'), save = row.querySelector('.save-permissions'), selected = new Set(user.permissions || []);
-      Object.entries(permissionLabels).forEach(([key, label]) => {
-        const item = document.createElement('label'); item.className = 'permission' + (selected.has(key) ? ' active' : '');
-        item.innerHTML = `<input type="checkbox" ${selected.has(key) ? 'checked' : ''}>${label}`;
-        item.querySelector('input').addEventListener('change', event => { item.classList.toggle('active', event.target.checked); save.classList.add('visible'); });
+      const list = row.querySelector('.permission-list');
+      const save = row.querySelector('.save-permissions');
+      const selected = new Set(user.permissions || []);
+
+      Object.entries(activeLabels).forEach(([key, label]) => {
+        const isCustom = key.startsWith('view:page_');
+        const item = document.createElement('label');
+        item.className = 'permission' + (isCustom ? ' custom-page' : '') + (selected.has(key) ? ' active' : '');
+        item.innerHTML = `<input type="checkbox" data-key="${escHtml(key)}" ${selected.has(key) ? 'checked' : ''}>${escHtml(label)}`;
+        item.querySelector('input').addEventListener('change', event => {
+          item.classList.toggle('active', event.target.checked);
+          save.classList.add('visible');
+        });
         list.appendChild(item);
       });
-      save.addEventListener('click', () => savePermissions(user.username, Array.from(list.querySelectorAll('input:checked')).map(input => Object.keys(permissionLabels)[Array.from(list.querySelectorAll('input')).indexOf(input)]), save));
+
+      save.addEventListener('click', () => {
+        const checkedKeys = Array.from(list.querySelectorAll('input:checked')).map(input => input.getAttribute('data-key'));
+        savePermissions(user.username, checkedKeys, save);
+      });
+
       const actions = row.querySelector('.actions');
-      if (!isSelf) { const del = document.createElement('button'); del.className = 'btn danger'; del.textContent = 'DELETE'; del.addEventListener('click', () => deleteUser(user.username, del)); actions.appendChild(del); }
-      else actions.innerHTML = '<span class="muted">—</span>';
+      if (!isSelf) {
+        const del = document.createElement('button');
+        del.className = 'btn danger';
+        del.textContent = 'DELETE';
+        del.addEventListener('click', () => deleteUser(user.username, del));
+        actions.appendChild(del);
+      } else {
+        actions.innerHTML = '<span class="muted">—</span>';
+      }
       tbody.appendChild(row);
     });
   }
-  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  (async () => { await loadMe(); await renderUsers(); })();
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  document.getElementById('addPageForm').onsubmit = async event => {
+    event.preventDefault();
+    const titleInput = document.getElementById('newPageTitle');
+    const pathInput = document.getElementById('newPagePath');
+    const title = titleInput.value.trim();
+    const pagePath = pathInput.value.trim();
+    if (!title || !pagePath) return;
+
+    try {
+      const response = await fetch('/api/nav-pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, path: pagePath })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        showToast(data.error || 'Failed to add page', 'err');
+        return;
+      }
+      showToast(`Page "${data.title}" added to navigation`, 'ok');
+      titleInput.value = '';
+      pathInput.value = '';
+      await loadNavPages();
+      await renderUsers();
+      if (window.refreshSiteNav) window.refreshSiteNav();
+    } catch {
+      showToast('Network error', 'err');
+    }
+  };
+
+  (async () => {
+    await loadMe();
+    await loadNavPages();
+    await renderUsers();
+  })();
 </script>
 </body>
 </html>
