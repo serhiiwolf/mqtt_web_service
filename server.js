@@ -188,12 +188,13 @@ function userFromRow(row) {
 }
 
 function getUser(username) {
-  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE username = ?').get(username));
+  if (!username) return null;
+  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE LOWER(username) = LOWER(?)').get(String(username).trim()));
 }
 
 function getUserByEmail(email) {
   if (!email) return null;
-  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE LOWER(email) = LOWER(?)').get(String(email).trim()));
+  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE LOWER(email) = LOWER(?) ORDER BY rowid DESC').get(String(email).trim()));
 }
 
 function getUserWithPassword(username) {
@@ -370,17 +371,13 @@ function authenticateUserFromToken(token) {
   const verified = verifyJwtToken(token);
   if (!verified) return null;
 
-  const email = verified.email;
   let user = null;
-  if (email) {
-    user = getUserByEmail(email);
-  }
-  if (!user && verified.sub) {
-    user = getUser(verified.sub);
-  }
-  if (!user && verified.name) {
-    user = getUser(verified.name);
-  }
+  // 1. Try matching by username / sub / name
+  if (verified.username) user = getUser(verified.username);
+  if (!user && verified.name) user = getUser(verified.name);
+  if (!user && verified.sub) user = getUser(verified.sub);
+  // 2. Fall back to email
+  if (!user && verified.email) user = getUserByEmail(verified.email);
 
   // If user profile is linked by email/username in SQLite:
   if (user) {
@@ -389,10 +386,21 @@ function authenticateUserFromToken(token) {
 
   // If valid token issued by SWOLF Auth with Admin role:
   const isSwolfAdmin = Boolean(verified.role && /admin/i.test(verified.role));
+  let fallbackPerms = isSwolfAdmin ? ALL_PERMISSIONS : ROLE_PERMISSIONS.user;
+  if (Array.isArray(verified.permissions)) {
+    fallbackPerms = verified.permissions;
+  }
+  if (Array.isArray(verified.devices)) {
+    const devPerms = verified.devices.map(d => (String(d).startsWith('device:') ? String(d) : `device:${d}`));
+    fallbackPerms = [...fallbackPerms, ...devPerms];
+  } else if (typeof verified.deviceId === 'string' && verified.deviceId) {
+    fallbackPerms = [...fallbackPerms, `device:${verified.deviceId}`];
+  }
+
   return {
-    username: verified.email || verified.name || 'swolf_auth_user',
+    username: verified.email || verified.name || verified.sub || 'swolf_auth_user',
     email: verified.email || null,
-    permissions: isSwolfAdmin ? ALL_PERMISSIONS : ROLE_PERMISSIONS.user,
+    permissions: fallbackPerms,
     role: isSwolfAdmin ? 'admin' : 'user',
     isJwt: true,
     tokenData: verified
@@ -406,22 +414,40 @@ const METRIC_UNITS = {
   PRESSURE: 'hPa',
   ALTITUDE: 'm'
 };
+const KNOWN_METRIC_KEYS = new Set(['temp', 'humidity', 'pressure', 'altitude', 'status']);
 
 function handleSensorTelemetry(topic, payloadStr, timestamp = new Date().toISOString()) {
   if (!topic || !payloadStr) return;
   const match = topic.match(/^Metrics\/([^/]+)\/([^/]+)$/i);
   if (!match) return;
 
-  const rawMetric = match[1];
-  const deviceId = match[2];
+  const topicPart1 = match[1];
+  const topicPart2 = match[2];
 
   if (payloadStr.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(payloadStr);
+
+      let payloadDevId = null;
+      if (parsed.device_id) payloadDevId = String(parsed.device_id);
+      else if (parsed.data && parsed.data.device_id) payloadDevId = String(parsed.data.device_id);
+
+      let rawMetric = topicPart1;
+      let deviceId = payloadDevId || topicPart2;
+
+      // Handle both Metrics/<deviceId>/<metric> and Metrics/<metric>/<deviceId>
+      if (KNOWN_METRIC_KEYS.has(topicPart2.toLowerCase()) && !KNOWN_METRIC_KEYS.has(topicPart1.toLowerCase())) {
+        rawMetric = topicPart2;
+        deviceId = payloadDevId || topicPart1;
+      } else if (KNOWN_METRIC_KEYS.has(topicPart1.toLowerCase())) {
+        rawMetric = topicPart1;
+        deviceId = payloadDevId || topicPart2;
+      }
+
       const metricType = parsed.type || rawMetric;
 
       if (metricType.toLowerCase() === 'status') {
-        const state = (parsed.data && parsed.data.state) ? parsed.data.state : 'online';
+        const state = (parsed.data && parsed.data.state) ? parsed.data.state : (parsed.state || 'online');
         db.prepare(`
           INSERT INTO sensor_telemetry (device_id, metric, value, unit, raw_payload, updated_at)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -434,7 +460,7 @@ function handleSensorTelemetry(topic, payloadStr, timestamp = new Date().toISOSt
         return;
       }
 
-      const dataVal = parsed.data !== undefined ? String(parsed.data) : '';
+      const dataVal = parsed.data !== undefined ? String(parsed.data) : (parsed.value !== undefined ? String(parsed.value) : '');
       const unit = METRIC_UNITS[rawMetric] || METRIC_UNITS[metricType] || '';
 
       db.prepare(`
@@ -530,15 +556,33 @@ function getSensorTelemetry(targetDeviceId = null, user = null) {
 
   let resultList = Object.values(devicesMap);
 
-  // Filter by user permissions if not admin
-  if (user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
-    resultList = resultList.filter(dev => user.permissions.includes(`device:${dev.deviceId}`));
+  // Filter by user permissions
+  const explicitDevicePerms = (user && Array.isArray(user.permissions))
+    ? user.permissions.filter(p => typeof p === 'string' && p.startsWith('device:'))
+    : [];
+
+  const isSuperAdmin = Boolean(user && (
+    user.role === 'admin' ||
+    (Array.isArray(user.permissions) && (user.permissions.includes('view:admin') || user.permissions.includes('access:editor')))
+  ));
+
+  // If user has explicitly assigned device permissions (even if admin), strictly respect them!
+  if (explicitDevicePerms.length > 0) {
+    const allowedDeviceIds = new Set(explicitDevicePerms.map(p => p.slice(7)));
+    resultList = resultList.filter(dev => allowedDeviceIds.has(dev.deviceId));
+  } else if (!isSuperAdmin) {
+    // Non-admin without any explicit device permissions gets no devices
+    resultList = [];
   }
 
   if (targetDeviceId) {
     const single = devicesMap[targetDeviceId] || null;
-    if (single && user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
-      if (!user.permissions.includes(`device:${targetDeviceId}`)) return null;
+    if (!single) return null;
+    if (explicitDevicePerms.length > 0) {
+      const allowedDeviceIds = new Set(explicitDevicePerms.map(p => p.slice(7)));
+      if (!allowedDeviceIds.has(targetDeviceId)) return null;
+    } else if (!isSuperAdmin) {
+      return null;
     }
     return single;
   }
@@ -867,6 +911,10 @@ app.get('/api/sensors', (req, res) => {
     user = getUser(req.session.user.username);
   }
 
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
   res.json({
     success: true,
     devices: getSensorTelemetry(null, user)
@@ -880,6 +928,10 @@ app.get('/api/sensors/:deviceId', (req, res) => {
     user = authenticateUserFromToken(authHeader.slice(7).trim());
   } else if (req.session && req.session.user) {
     user = getUser(req.session.user.username);
+  }
+
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
   const dev = getSensorTelemetry(req.params.deviceId, user);
@@ -901,11 +953,25 @@ app.post('/api/sensors/:deviceId/refresh', (req, res) => {
     user = getUser(req.session.user.username);
   }
 
+  if (!user) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
   const deviceId = req.params.deviceId;
-  if (user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
+  const explicitDevicePerms = Array.isArray(user.permissions)
+    ? user.permissions.filter(p => typeof p === 'string' && p.startsWith('device:'))
+    : [];
+  const isSuperAdmin = Boolean(
+    user.role === 'admin' ||
+    (Array.isArray(user.permissions) && (user.permissions.includes('view:admin') || user.permissions.includes('access:editor')))
+  );
+
+  if (explicitDevicePerms.length > 0) {
     if (!user.permissions.includes(`device:${deviceId}`)) {
       return res.status(403).json({ success: false, error: 'Access denied to this device' });
     }
+  } else if (!isSuperAdmin) {
+    return res.status(403).json({ success: false, error: 'Access denied to this device' });
   }
 
   requestSensorRefresh(deviceId, () => {
