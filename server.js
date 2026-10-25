@@ -402,12 +402,15 @@ function extractTokenFromRequest(req) {
                      req.headers['x-http-authorization'];
   if (authHeader && typeof authHeader === 'string') {
     const trimmed = authHeader.trim();
-    if (/^bearer\s+/i.test(trimmed)) {
-      return trimmed.replace(/^bearer\s+/i, '').trim();
-    }
-    // Raw JWT format (3 base64url parts separated by dots)
-    if (trimmed.split('.').length === 3) {
-      return trimmed;
+    if (trimmed && trimmed !== '(null)' && trimmed !== 'null' && trimmed !== 'undefined') {
+      if (/^bearer\s+/i.test(trimmed)) {
+        const candidate = trimmed.replace(/^bearer\s+/i, '').trim();
+        if (candidate && candidate !== 'null' && candidate !== 'undefined') return candidate;
+      }
+      // Raw JWT format (3 base64url parts separated by dots)
+      if (trimmed.split('.').length === 3) {
+        return trimmed;
+      }
     }
   }
 
@@ -983,8 +986,8 @@ app.get('/api/permissions/catalog', (req, res) => {
 app.get('/api/sensors', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
-    const receivedHeaders = Object.keys(req.headers).join(', ');
-    console.warn(`[AUTH] /api/sensors: 401 Unauthorized. Headers received by Node.js: [${receivedHeaders}]`);
+    const rawAuth = req.headers.authorization || req.headers.Authorization || '(none)';
+    console.warn(`[AUTH] /api/sensors: 401 Unauthorized. rawAuth = [${rawAuth}]`);
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
