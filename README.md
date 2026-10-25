@@ -49,7 +49,7 @@ SCADA/IIoT control plane. Сервер працює на Node.js 22.5+ і вик
 ```bash
 copy .env.example .env
 # встановіть у .env унікальні SESSION_SECRET,
-# NODERED_CREDENTIAL_SECRET і 32-byte MQTT_ENCRYPTION_KEY
+# NODERED_CREDENTIAL_SECRET, 32-byte MQTT_ENCRYPTION_KEY та JWT_SECRET
 npm install
 npm start
 ```
@@ -120,7 +120,7 @@ dashboard path `/nodes/ui`. Основний flow зберігається у
   файли не повинні потрапляти до Git;
 - прямий доступ до `public/*.html` закритий, сторінки віддаються через route
   handlers;
-- у production обов'язково задайте всі три secret variables і використовуйте
+- у production обов'язково задайте всі чотири secret variables (включно з JWT_SECRET) і використовуйте
   HTTPS/reverse proxy.
 
 ## Структура

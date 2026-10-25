@@ -21,6 +21,11 @@ loadEnvFile();
 if (Number(process.versions.node.split('.')[0]) < 22) {
   throw new Error('Node.js 22.5 or newer is required because the project uses the built-in node:sqlite module.');
 }
+
+const isProd = process.env.NODE_ENV === 'production';
+if (isProd && (!process.env.SESSION_SECRET || !process.env.NODERED_CREDENTIAL_SECRET || !process.env.MQTT_ENCRYPTION_KEY || !process.env.JWT_SECRET)) {
+  throw new Error('[SECURITY] SESSION_SECRET, NODERED_CREDENTIAL_SECRET, MQTT_ENCRYPTION_KEY and JWT_SECRET are required in production.');
+}
 const { DatabaseSync } = require('node:sqlite');
 const RED = require('node-red');
 const http = require('http');
@@ -34,6 +39,18 @@ const app = express();
 // Це дозволяє читати X-Forwarded-Proto: https від Cloudflare
 // і правильно визначати реальний IP клієнта.
 app.set('trust proxy', 1);
+
+// CORS для мобільного застосунку (SWOLF Auth Android) та зовнішніх клієнтів
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-API-Key');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 const server = http.createServer(app);
 
 // ── SQLite storage ─────────────────────────────────────────────────────────────
@@ -67,24 +84,80 @@ db.exec(`
     permission_key TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS sensor_telemetry (
+    device_id TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    value TEXT NOT NULL,
+    unit TEXT,
+    raw_payload TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (device_id, metric)
+  );
 `);
 const mqttLogColumns = db.prepare('PRAGMA table_info(mqtt_event_logs)').all().map(column => column.name);
 if (!mqttLogColumns.includes('username')) {
   db.exec('ALTER TABLE mqtt_event_logs ADD COLUMN username TEXT');
 }
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_mqtt_event_logs_ts ON mqtt_event_logs (ts);
+  CREATE INDEX IF NOT EXISTS idx_mqtt_event_logs_username_type ON mqtt_event_logs (username, type);
+`);
+
+const userColumns = db.prepare('PRAGMA table_info(users)').all().map(column => column.name);
+if (!userColumns.includes('email')) {
+  db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  console.log('[AUTH] Added email column to users table.');
+}
+
+const deviceColumns = db.prepare('PRAGMA table_info(mqtt_devices)').all().map(column => column.name);
+if (!deviceColumns.includes('owner_email')) {
+  db.exec('ALTER TABLE mqtt_devices ADD COLUMN owner_email TEXT');
+  console.log('[AUTH] Added owner_email column to mqtt_devices table.');
+}
+
+const navPageColumns = db.prepare('PRAGMA table_info(nav_pages)').all().map(column => column.name);
+if (!navPageColumns.includes('created_by')) {
+  db.exec('ALTER TABLE nav_pages ADD COLUMN created_by TEXT');
+  db.exec("UPDATE nav_pages SET created_by = 'admin' WHERE created_by IS NULL");
+  console.log('[AUTH] Added created_by column to nav_pages table.');
+}
 
 const ALL_PERMISSIONS = [
   'view:dashboard', 'view:nodes_ui', 'view:admin', 'view:mqtt_logs',
-  'manage:users', 'grant:permissions', 'manage:devices', 'access:editor'
+  'manage:users', 'grant:permissions', 'manage:devices', 'manage:navigation', 'access:editor'
 ];
 
+try {
+  const usersWithAdmin = db.prepare('SELECT username, permissions FROM users').all();
+  usersWithAdmin.forEach(u => {
+    const perms = parsePermissions(u.permissions);
+    if (perms.includes('grant:permissions') || perms.includes('view:admin') || perms.includes('access:editor')) {
+      if (!perms.includes('manage:navigation')) {
+        perms.push('manage:navigation');
+        db.prepare('UPDATE users SET permissions = ? WHERE username = ?').run(JSON.stringify(perms), u.username);
+      }
+    }
+  });
+} catch (e) {}
+
 function getAllNavPages() {
-  return db.prepare('SELECT id, title, path, permission_key, created_at AS createdAt FROM nav_pages ORDER BY id ASC').all();
+  return db.prepare('SELECT id, title, path, permission_key, created_by AS createdBy, created_at AS createdAt FROM nav_pages ORDER BY id ASC').all();
+}
+
+function getAllDevicePermissions() {
+  const devices = db.prepare('SELECT username FROM mqtt_devices').all();
+  let telemetryDevs = [];
+  try {
+    telemetryDevs = db.prepare('SELECT DISTINCT device_id FROM sensor_telemetry').all().map(r => ({ username: r.device_id }));
+  } catch (e) {}
+  const allNames = new Set([...devices.map(d => d.username), ...telemetryDevs.map(d => d.username)]);
+  return Array.from(allNames).map(name => `device:${name}`);
 }
 
 function getAllValidPermissions() {
   const dynamic = getAllNavPages().map(page => page.permission_key);
-  return [...new Set([...ALL_PERMISSIONS, ...dynamic])];
+  const devicePerms = getAllDevicePermissions();
+  return [...new Set([...ALL_PERMISSIONS, ...dynamic, ...devicePerms])];
 }
 const ROLE_PERMISSIONS = {
   user: ['view:dashboard'],
@@ -111,11 +184,16 @@ function userFromRow(row) {
   const permissions = parsePermissions(row.permissions);
   const role = permissions.includes('access:editor') ? 'admin' :
     permissions.includes('view:nodes_ui') ? 'viewer' : 'user';
-  return { username: row.username, permissions, role, createdAt: row.created_at };
+  return { username: row.username, email: row.email || null, permissions, role, createdAt: row.created_at };
 }
 
 function getUser(username) {
-  return userFromRow(db.prepare('SELECT username, permissions, created_at FROM users WHERE username = ?').get(username));
+  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE username = ?').get(username));
+}
+
+function getUserByEmail(email) {
+  if (!email) return null;
+  return userFromRow(db.prepare('SELECT username, email, permissions, created_at FROM users WHERE LOWER(email) = LOWER(?)').get(String(email).trim()));
 }
 
 function getUserWithPassword(username) {
@@ -205,25 +283,38 @@ function pushMqttEvent(event) {
     loggedEvent.payload || null,
     loggedEvent.qos ?? null
   );
-  pruneMqttEventLogs();
 }
 
 function pruneMqttEventLogs() {
-  const cutoff = new Date(Date.now() - MQTT_EVENT_LOG_RETENTION_MS).toISOString();
-  db.prepare('DELETE FROM mqtt_event_logs WHERE ts < ?').run(cutoff);
+  try {
+    const cutoff = new Date(Date.now() - MQTT_EVENT_LOG_RETENTION_MS).toISOString();
+    const result = db.prepare('DELETE FROM mqtt_event_logs WHERE ts < ?').run(cutoff);
+    if (result && result.changes > 0) {
+      console.log(`[MQTT] Pruned ${result.changes} event logs older than 3 days.`);
+    }
+  } catch (err) {
+    console.error('[MQTT] Prune event logs error:', err.message);
+  }
 }
 
+const MQTT_EVENT_LOG_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Initial prune on startup
+pruneMqttEventLogs();
+// Background timer for periodic log pruning
+const mqttPruneTimer = setInterval(pruneMqttEventLogs, MQTT_EVENT_LOG_PRUNE_INTERVAL_MS);
+if (mqttPruneTimer.unref) mqttPruneTimer.unref();
+
 function readMqttEventLogs() {
-  pruneMqttEventLogs();
+  const cutoff = new Date(Date.now() - MQTT_EVENT_LOG_RETENTION_MS).toISOString();
   return db.prepare(`
     SELECT ts, type, client_id AS clientId, username, topic, payload, qos
     FROM mqtt_event_logs
+    WHERE ts >= ?
     ORDER BY ts DESC, id DESC
-  `).all();
+  `).all(cutoff);
 }
 
 function readMqttDeviceStatuses() {
-  pruneMqttEventLogs();
   return db.prepare(`
     SELECT d.username, d.created_at AS createdAt,
       (
@@ -249,6 +340,228 @@ function clipPayload(payload, maxLen = 200) {
   if (payload == null) return '';
   const asString = String(payload);
   return asString.length > maxLen ? `${asString.slice(0, maxLen)}…` : asString;
+}
+
+// ── JWT verification helper (HS256 matching SWOLF Auth) ────────────────────────
+function verifyJwtToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  const secret = process.env.JWT_SECRET || (isProd ? null : 'dev-change-me-jwt-secret');
+  if (!secret) {
+    console.warn('[AUTH] JWT verification rejected: JWT_SECRET is not configured.');
+    return null;
+  }
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, signatureB64] = parts;
+    const expectedSignature = crypto.createHmac('sha256', secret)
+      .update(`${headerB64}.${payloadB64}`)
+      .digest('base64url');
+    if (expectedSignature !== signatureB64) return null;
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    if (payload.exp && Date.now() >= payload.exp * 1000) return null;
+    return payload;
+  } catch (err) {
+    return null;
+  }
+}
+
+function authenticateUserFromToken(token) {
+  const verified = verifyJwtToken(token);
+  if (!verified) return null;
+
+  const email = verified.email;
+  let user = null;
+  if (email) {
+    user = getUserByEmail(email);
+  }
+  if (!user && verified.sub) {
+    user = getUser(verified.sub);
+  }
+  if (!user && verified.name) {
+    user = getUser(verified.name);
+  }
+
+  // If user profile is linked by email/username in SQLite:
+  if (user) {
+    return { ...user, isJwt: true, tokenData: verified };
+  }
+
+  // If valid token issued by SWOLF Auth with Admin role:
+  const isSwolfAdmin = Boolean(verified.role && /admin/i.test(verified.role));
+  return {
+    username: verified.email || verified.name || 'swolf_auth_user',
+    email: verified.email || null,
+    permissions: isSwolfAdmin ? ALL_PERMISSIONS : ROLE_PERMISSIONS.user,
+    role: isSwolfAdmin ? 'admin' : 'user',
+    isJwt: true,
+    tokenData: verified
+  };
+}
+
+// ── Sensor telemetry handlers ──────────────────────────────────────────────────
+const METRIC_UNITS = {
+  Temp: '°C',
+  HUMIDITY: '%',
+  PRESSURE: 'hPa',
+  ALTITUDE: 'm'
+};
+
+function handleSensorTelemetry(topic, payloadStr, timestamp = new Date().toISOString()) {
+  if (!topic || !payloadStr) return;
+  const match = topic.match(/^Metrics\/([^/]+)\/([^/]+)$/i);
+  if (!match) return;
+
+  const rawMetric = match[1];
+  const deviceId = match[2];
+
+  if (payloadStr.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(payloadStr);
+      const metricType = parsed.type || rawMetric;
+
+      if (metricType.toLowerCase() === 'status') {
+        const state = (parsed.data && parsed.data.state) ? parsed.data.state : 'online';
+        db.prepare(`
+          INSERT INTO sensor_telemetry (device_id, metric, value, unit, raw_payload, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(device_id, metric) DO UPDATE SET
+            value = excluded.value,
+            unit = excluded.unit,
+            raw_payload = excluded.raw_payload,
+            updated_at = excluded.updated_at
+        `).run(deviceId, 'status', state, '', payloadStr, timestamp);
+        return;
+      }
+
+      const dataVal = parsed.data !== undefined ? String(parsed.data) : '';
+      const unit = METRIC_UNITS[rawMetric] || METRIC_UNITS[metricType] || '';
+
+      db.prepare(`
+        INSERT INTO sensor_telemetry (device_id, metric, value, unit, raw_payload, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(device_id, metric) DO UPDATE SET
+          value = excluded.value,
+          unit = excluded.unit,
+          raw_payload = excluded.raw_payload,
+          updated_at = excluded.updated_at
+      `).run(deviceId, rawMetric, dataVal, unit, payloadStr, timestamp);
+
+      console.log(`[TELEMETRY] ${deviceId} -> ${rawMetric}: ${dataVal} ${unit}`);
+    } catch (e) {
+      // payload not JSON
+    }
+  }
+}
+
+function requestSensorRefresh(deviceId, callback) {
+  const metricsToQuery = ['Temp', 'HUMIDITY', 'PRESSURE', 'ALTITUDE'];
+  let count = 0;
+  for (const m of metricsToQuery) {
+    const topic = `Metrics/${m}/${deviceId}`;
+    const packet = {
+      topic,
+      payload: Buffer.from('get', 'utf8'),
+      qos: 1,
+      retain: false
+    };
+    aedes.publish(packet, (err) => {
+      if (err) console.error(`[MQTT] Publish refresh to ${topic} error:`, err);
+      count++;
+      if (count === metricsToQuery.length && callback) {
+        callback();
+      }
+    });
+  }
+}
+
+function getSensorTelemetry(targetDeviceId = null, user = null) {
+  let query = 'SELECT device_id, metric, value, unit, raw_payload, updated_at FROM sensor_telemetry';
+  const params = [];
+  if (targetDeviceId) {
+    query += ' WHERE device_id = ?';
+    params.push(targetDeviceId);
+  }
+  query += ' ORDER BY device_id, metric';
+  const rows = db.prepare(query).all(...params);
+
+  const devicesMap = {};
+  for (const row of rows) {
+    if (!devicesMap[row.device_id]) {
+      devicesMap[row.device_id] = {
+        deviceId: row.device_id,
+        status: 'unknown',
+        lastSeen: row.updated_at,
+        metrics: {}
+      };
+    }
+    const dev = devicesMap[row.device_id];
+    if (row.updated_at > dev.lastSeen) {
+      dev.lastSeen = row.updated_at;
+    }
+    if (row.metric.toLowerCase() === 'status') {
+      dev.status = row.value;
+    } else {
+      dev.metrics[row.metric] = {
+        value: isNaN(Number(row.value)) ? row.value : Number(row.value),
+        unit: row.unit,
+        updatedAt: row.updated_at
+      };
+    }
+  }
+
+  // Cross-check with registered MQTT devices & online statuses
+  const statuses = readMqttDeviceStatuses();
+  for (const st of statuses) {
+    if (devicesMap[st.username]) {
+      devicesMap[st.username].status = st.connected ? 'online' : (devicesMap[st.username].status || 'offline');
+      if (st.connectedAt && (!devicesMap[st.username].lastSeen || st.connectedAt > devicesMap[st.username].lastSeen)) {
+        devicesMap[st.username].lastSeen = st.connectedAt;
+      }
+    } else if (!targetDeviceId) {
+      devicesMap[st.username] = {
+        deviceId: st.username,
+        status: st.connected ? 'online' : 'offline',
+        lastSeen: st.connectedAt || st.createdAt,
+        metrics: {}
+      };
+    }
+  }
+
+  let resultList = Object.values(devicesMap);
+
+  // Filter by user permissions if not admin
+  if (user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
+    resultList = resultList.filter(dev => user.permissions.includes(`device:${dev.deviceId}`));
+  }
+
+  if (targetDeviceId) {
+    const single = devicesMap[targetDeviceId] || null;
+    if (single && user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
+      if (!user.permissions.includes(`device:${targetDeviceId}`)) return null;
+    }
+    return single;
+  }
+
+  return resultList;
+}
+
+function backfillSensorTelemetryFromLogs() {
+  try {
+    const logs = db.prepare(`
+      SELECT topic, payload, ts FROM mqtt_event_logs
+      WHERE topic LIKE 'Metrics/%'
+      ORDER BY id ASC
+    `).all();
+    for (const log of logs) {
+      handleSensorTelemetry(log.topic, log.payload, log.ts);
+    }
+    if (logs.length > 0) {
+      console.log(`[TELEMETRY] Backfilled telemetry from ${logs.length} previous logs.`);
+    }
+  } catch (err) {
+    console.warn('[TELEMETRY] Backfill notice:', err.message);
+  }
 }
 
 // TCP MQTT  (mqtt://localhost:1883)
@@ -284,16 +597,18 @@ aedes.on('clientDisconnect', (client) => {
   console.log(`[MQTT] client disconnected: ${client.id}`);
 });
 aedes.on('publish', (packet, client) => {
+  const payloadStr = packet.payload ? packet.payload.toString() : '';
   if (client) {
     pushMqttEvent({
       type: 'publish',
       clientId: client.id || 'unknown',
       username: client.username || null,
       topic: packet.topic,
-      payload: clipPayload(packet.payload && packet.payload.toString())
+      payload: clipPayload(payloadStr)
     });
-    console.log(`[MQTT] ${packet.topic}: ${packet.payload.toString()}`);
+    console.log(`[MQTT] ${packet.topic}: ${payloadStr}`);
   }
+  handleSensorTelemetry(packet.topic, payloadStr);
 });
 
 aedes.on('subscribe', (subscriptions, client) => {
@@ -324,13 +639,8 @@ aedes.on('unsubscribe', (subscriptions, client) => {
 // ── Session & body parsing ─────────────────────────────────────────────────────
 // NODE_ENV=production встановлюється в systemd service на сервері.
 // Це вмикає secure cookie — обов'язково при роботі через Cloudflare HTTPS.
-const isProd = process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'dev-change-me-session-secret';
 const nodeRedCredentialSecret = process.env.NODERED_CREDENTIAL_SECRET || 'dev-change-me-nodered-credential-secret';
-
-if (isProd && (!process.env.SESSION_SECRET || !process.env.NODERED_CREDENTIAL_SECRET || !process.env.MQTT_ENCRYPTION_KEY)) {
-  throw new Error('[SECURITY] SESSION_SECRET, NODERED_CREDENTIAL_SECRET and MQTT_ENCRYPTION_KEY are required in production.');
-}
 
 app.use(session({
   secret: sessionSecret,
@@ -396,7 +706,7 @@ app.get('/dashboard', (req, res) => {
 });
 
 app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, email } = req.body;
   if (!username || !password)
     return res.json({ error: 'All fields are required' });
   if (password.length < 6)
@@ -405,11 +715,16 @@ app.post('/api/register', async (req, res) => {
   if (getUser(username))
     return res.json({ error: 'User already exists' });
 
+  const cleanEmail = (email && typeof email === 'string' && email.includes('@')) ? email.trim().toLowerCase() : null;
+  if (cleanEmail && getUserByEmail(cleanEmail)) {
+    return res.json({ error: 'Email is already linked to another user' });
+  }
+
   const hash = await bcrypt.hash(password, 10);
   db.prepare(`
-    INSERT INTO users (username, password_hash, permissions, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(username, hash, JSON.stringify(ROLE_PERMISSIONS.user), new Date().toISOString());
+    INSERT INTO users (username, email, password_hash, permissions, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(username, cleanEmail, hash, JSON.stringify(ROLE_PERMISSIONS.user), new Date().toISOString());
 
   req.session.user = { username };
   res.json({ success: true, redirectTo: '/dashboard' });
@@ -439,19 +754,170 @@ app.post('/logout', (req, res) => {
 
 // ── Session info endpoint (used by dashboard) ──────────────────────────────────
 app.get('/api/me', (req, res) => {
-  if (req.session.user) {
-    const user = getUser(req.session.user.username);
-    if (user) {
-      const allNavPages = getAllNavPages();
-      const userNavPages = allNavPages.filter(p => user.permissions.includes(p.permission_key));
-      return res.json({
-        ...user,
-        navPages: userNavPages,
-        allNavPages: user.permissions.includes('view:admin') ? allNavPages : undefined
-      });
-    }
+  let user = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    user = authenticateUserFromToken(authHeader.slice(7).trim());
+  } else if (req.session && req.session.user) {
+    user = getUser(req.session.user.username);
+  }
+
+  if (user) {
+    const allNavPages = getAllNavPages();
+    const userNavPages = allNavPages.filter(p => user.permissions.includes(p.permission_key));
+    return res.json({
+      ...user,
+      navPages: userNavPages,
+      allNavPages: user.permissions.includes('view:admin') ? allNavPages : undefined
+    });
   }
   res.status(401).json({ error: 'not authenticated' });
+});
+
+// Update own email
+app.patch('/api/me/email', (req, res) => {
+  let currentUsername = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const u = authenticateUserFromToken(authHeader.slice(7).trim());
+    if (u) currentUsername = u.username;
+  } else if (req.session && req.session.user) {
+    currentUsername = req.session.user.username;
+  }
+
+  if (!currentUsername) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const email = (req.body.email || '').trim().toLowerCase();
+  if (email && (!email.includes('@') || email.length > 255)) {
+    return res.status(400).json({ error: 'Valid email address required' });
+  }
+
+  if (email) {
+    const existing = getUserByEmail(email);
+    if (existing && existing.username !== currentUsername) {
+      return res.status(400).json({ error: 'Email already linked to another account' });
+    }
+  }
+
+  db.prepare('UPDATE users SET email = ? WHERE username = ?').run(email || null, currentUsername);
+  res.json({ success: true, username: currentUsername, email: email || null });
+});
+
+// ── Permissions Catalog API (Categorized RBAC for Admin Matrix) ──────────────
+app.get('/api/permissions/catalog', (req, res) => {
+  const navPages = getAllNavPages();
+  const devices = db.prepare('SELECT username, created_at, owner_email FROM mqtt_devices ORDER BY username').all();
+  let telemetryDevs = [];
+  try {
+    telemetryDevs = db.prepare('SELECT DISTINCT device_id FROM sensor_telemetry').all();
+  } catch (e) {}
+
+  const knownDevices = new Set(devices.map(d => d.username));
+  for (const t of telemetryDevs) {
+    if (!knownDevices.has(t.device_id)) {
+      devices.push({ username: t.device_id, created_at: null, owner_email: null });
+      knownDevices.add(t.device_id);
+    }
+  }
+
+  const systemPages = [
+    { key: 'view:dashboard', label: 'Dashboard', desc: 'Основний SCADA-дашборд' },
+    { key: 'view:nodes_ui', label: 'Node-RED UI', desc: 'SCADA панель керування' },
+    { key: 'view:mqtt_logs', label: 'MQTT Logs', desc: 'Журнал подій брокера' },
+    { key: 'view:admin', label: 'Users & Access', desc: 'Матриця прав користувачів' },
+    { key: 'access:editor', label: 'Node-RED Editor', desc: 'Редактор логіки flows' }
+  ];
+
+  const rolePerms = [
+    { key: 'grant:permissions', label: 'Grant Permissions', desc: 'Зміна прав доступу' },
+    { key: 'manage:users', label: 'Manage Users', desc: 'Видалення акаунтів' },
+    { key: 'manage:devices', label: 'Manage Devices', desc: 'Керування пристроями та ключами' },
+    { key: 'manage:navigation', label: 'Manage Navigation', desc: 'Створення та налаштування кастомної навігації' }
+  ];
+
+  const catalog = {
+    systemPages,
+    roles: rolePerms,
+    system: [...systemPages, ...rolePerms],
+    navPages: navPages.map(p => ({
+      key: p.permission_key,
+      title: p.title,
+      path: p.path
+    })),
+    devices: devices.map(d => ({
+      key: `device:${d.username}`,
+      deviceId: d.username,
+      label: d.username === 's3_sensor_01' ? 'ESP32-S3 (AHT20/BMP280)' : d.username,
+      ownerEmail: d.owner_email || null
+    }))
+  };
+
+  res.json(catalog);
+});
+
+// ── Sensors / Telemetry API (Mobile App & SCADA) ──────────────────────────────
+app.get('/api/sensors', (req, res) => {
+  let user = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    user = authenticateUserFromToken(authHeader.slice(7).trim());
+  } else if (req.session && req.session.user) {
+    user = getUser(req.session.user.username);
+  }
+
+  res.json({
+    success: true,
+    devices: getSensorTelemetry(null, user)
+  });
+});
+
+app.get('/api/sensors/:deviceId', (req, res) => {
+  let user = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    user = authenticateUserFromToken(authHeader.slice(7).trim());
+  } else if (req.session && req.session.user) {
+    user = getUser(req.session.user.username);
+  }
+
+  const dev = getSensorTelemetry(req.params.deviceId, user);
+  if (!dev) {
+    return res.status(404).json({ success: false, error: 'Device not found or access denied' });
+  }
+  res.json({
+    success: true,
+    device: dev
+  });
+});
+
+app.post('/api/sensors/:deviceId/refresh', (req, res) => {
+  let user = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    user = authenticateUserFromToken(authHeader.slice(7).trim());
+  } else if (req.session && req.session.user) {
+    user = getUser(req.session.user.username);
+  }
+
+  const deviceId = req.params.deviceId;
+  if (user && !user.permissions.includes('view:admin') && !user.permissions.includes('access:editor') && user.role !== 'admin') {
+    if (!user.permissions.includes(`device:${deviceId}`)) {
+      return res.status(403).json({ success: false, error: 'Access denied to this device' });
+    }
+  }
+
+  requestSensorRefresh(deviceId, () => {
+    setTimeout(() => {
+      const dev = getSensorTelemetry(deviceId, user);
+      res.json({
+        success: true,
+        message: `Telemetry refresh requested for ${deviceId}`,
+        device: dev || { deviceId, status: 'unknown', metrics: {} }
+      });
+    }, 600);
+  });
 });
 
 app.get('/api/mqtt/logs', requirePermission('view:mqtt_logs'), (req, res) => {
@@ -489,6 +955,18 @@ app.post('/api/mqtt/publish', requirePermission('view:dashboard'), (req, res) =>
 // ── Permission middleware ──────────────────────────────────────────────────────
 function requirePermission(permission) {
   return (req, res, next) => {
+    // 1. Check Bearer token (JWT from SWOLF Auth or internal)
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.slice(7).trim();
+      const tokenUser = authenticateUserFromToken(token);
+      if (tokenUser && tokenUser.permissions && tokenUser.permissions.includes(permission)) {
+        req.currentUser = tokenUser;
+        return next();
+      }
+    }
+
+    // 2. Check session
     const user = req.session && req.session.user && getUser(req.session.user.username);
     if (user && user.permissions.includes(permission)) {
       req.currentUser = user;
@@ -544,9 +1022,30 @@ app.get('/admin/mqtt-devices', (req, res) => {
 });
 
 app.get('/api/users', requirePermission('view:admin'), (req, res) => {
-  const list = db.prepare('SELECT username, permissions, created_at FROM users ORDER BY username').all()
+  const list = db.prepare('SELECT username, email, permissions, created_at FROM users ORDER BY username').all()
     .map(userFromRow);
   res.json(list);
+});
+
+app.patch('/api/users/:username/email', requirePermission('grant:permissions'), (req, res) => {
+  const { username } = req.params;
+  const user = getUser(username);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const email = (req.body.email || '').trim().toLowerCase();
+  if (email && (!email.includes('@') || email.length > 255)) {
+    return res.status(400).json({ error: 'Valid email address required' });
+  }
+
+  if (email) {
+    const existing = getUserByEmail(email);
+    if (existing && existing.username !== username) {
+      return res.status(400).json({ error: 'Email already linked to another account' });
+    }
+  }
+
+  db.prepare('UPDATE users SET email = ? WHERE username = ?').run(email || null, username);
+  res.json({ success: true, username, email: email || null });
 });
 
 app.patch('/api/users/:username/permissions', requirePermission('grant:permissions'), (req, res) => {
@@ -571,13 +1070,13 @@ app.get('/api/nav-pages', (req, res) => {
   const user = req.session.user && getUser(req.session.user.username);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   const pages = getAllNavPages();
-  if (user.permissions.includes('view:admin') || user.permissions.includes('grant:permissions')) {
+  if (user.permissions.includes('view:admin') || user.permissions.includes('grant:permissions') || user.permissions.includes('manage:navigation')) {
     return res.json(pages);
   }
   res.json(pages.filter(p => user.permissions.includes(p.permission_key)));
 });
 
-app.post('/api/nav-pages', requirePermission('grant:permissions'), (req, res) => {
+app.post('/api/nav-pages', requirePermission('manage:navigation'), (req, res) => {
   const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
   let pagePath = typeof req.body.path === 'string' ? req.body.path.trim() : '';
   if (!title || title.length > 64) {
@@ -595,21 +1094,22 @@ app.post('/api/nav-pages', requirePermission('grant:permissions'), (req, res) =>
     return res.status(409).json({ error: 'A navigation page with this path already exists' });
   }
 
+  const createdBy = (req.currentUser && req.currentUser.username) || (req.session && req.session.user && req.session.user.username) || 'admin';
   const tempKey = 'view:page_' + Date.now();
   const insertResult = db.prepare(`
-    INSERT INTO nav_pages (title, path, permission_key, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(title, pagePath, tempKey, new Date().toISOString());
+    INSERT INTO nav_pages (title, path, permission_key, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(title, pagePath, tempKey, createdBy, new Date().toISOString());
 
   const pageId = insertResult.lastInsertRowid;
   const permissionKey = `view:page_${pageId}`;
   db.prepare('UPDATE nav_pages SET permission_key = ? WHERE id = ?').run(permissionKey, pageId);
 
-  // Automatically grant permission to users with grant:permissions or view:admin
+  // Automatically grant permission to users with manage:navigation, grant:permissions or view:admin
   const usersWithGrant = db.prepare('SELECT username, permissions FROM users').all();
   usersWithGrant.forEach(u => {
     const perms = parsePermissions(u.permissions);
-    if (perms.includes('grant:permissions') || perms.includes('view:admin') || u.username === req.session.user.username) {
+    if (perms.includes('manage:navigation') || perms.includes('grant:permissions') || perms.includes('view:admin') || u.username === createdBy) {
       if (!perms.includes(permissionKey)) {
         perms.push(permissionKey);
         db.prepare('UPDATE users SET permissions = ? WHERE username = ?').run(JSON.stringify(perms), u.username);
@@ -617,11 +1117,11 @@ app.post('/api/nav-pages', requirePermission('grant:permissions'), (req, res) =>
     }
   });
 
-  const createdPage = db.prepare('SELECT id, title, path, permission_key, created_at AS createdAt FROM nav_pages WHERE id = ?').get(pageId);
+  const createdPage = db.prepare('SELECT id, title, path, permission_key, created_by AS createdBy, created_at AS createdAt FROM nav_pages WHERE id = ?').get(pageId);
   res.status(201).json(createdPage);
 });
 
-app.delete('/api/nav-pages/:id', requirePermission('grant:permissions'), (req, res) => {
+app.delete('/api/nav-pages/:id', requirePermission('manage:navigation'), (req, res) => {
   const pageId = Number(req.params.id);
   const page = db.prepare('SELECT id, permission_key FROM nav_pages WHERE id = ?').get(pageId);
   if (!page) {
@@ -764,6 +1264,8 @@ app.use(settings.httpAdminRoot, requireAdminPage, RED.httpAdmin);
 app.use(settings.httpNodeRoot, requireNodeHttpAccess, RED.httpNode);
 
 // ── Start ──────────────────────────────────────────────────────────────────────
+backfillSensorTelemetryFromLogs();
+
 server.listen(3000, '127.0.0.1', () => {
   console.log('');
   console.log('  App:          http://localhost:3000');

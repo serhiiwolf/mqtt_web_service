@@ -10,28 +10,341 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     .admin-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
-    .admin-layout { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(260px,.75fr); gap:10px; }
-    .table-wrap { overflow:auto; }
-    .permission-list { display:flex; flex-wrap:wrap; gap:4px; max-width:580px; }
-    .permission { display:inline-flex; align-items:center; gap:4px; padding:4px 6px; border:1px solid var(--line); color:var(--muted); background:#0c121c; font:9px "JetBrains Mono",monospace; cursor:pointer; }
-    .permission.active { color:var(--green); border-color:rgba(56,217,150,.45); background:rgba(56,217,150,.08); }
-    .permission.custom-page { border-style:dashed; }
-    .permission.custom-page.active { color:var(--cyan); border-color:rgba(32,200,232,.45); background:rgba(32,200,232,.08); }
-    .permission input { width:10px; height:10px; accent-color:var(--green); }
-    .save-permissions { display:none; margin-top:7px; }
-    .save-permissions.visible { display:inline-block; }
-    .username-cell { color:var(--cyan); font:11px "JetBrains Mono",monospace; white-space:nowrap; }
-    .date-cell { color:var(--muted); font:9px "JetBrains Mono",monospace; white-space:nowrap; }
-    .actions { white-space:nowrap; }
-    .policy-card { padding:9px; border:1px solid var(--line); border-left:2px solid var(--cyan); background:rgba(23,33,49,.35); }
-    .policy-card.orange { border-left-color:var(--orange); } .policy-card.green { border-left-color:var(--green); }
-    .policy-card strong { display:block; font-size:10px; } .policy-card p { margin:3px 0 0; color:var(--muted); font:9px "JetBrains Mono",monospace; }
-    .audit-line { display:flex; gap:7px; padding:7px 0; border-bottom:1px solid var(--line); color:var(--muted); font:9px "JetBrains Mono",monospace; }
-    .audit-line:last-child { border-bottom:0; } .audit-line b { color:var(--text); font-weight:400; }
+    .admin-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 12px;
+      align-items: start;
+    }
+
+    /* Users Matrix Panel & Vertical Scroll (2-3x height of aside ~540px) */
+    .users-matrix-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    .users-table-wrap {
+      max-height: 560px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border: 1px solid var(--line);
+      background: rgba(12,18,28,.4);
+      border-radius: 0 0 4px 4px;
+    }
+    .users-table-wrap::-webkit-scrollbar {
+      width: 6px;
+    }
+    .users-table-wrap::-webkit-scrollbar-track {
+      background: rgba(9,13,21,.5);
+    }
+    .users-table-wrap::-webkit-scrollbar-thumb {
+      background: var(--line-hi);
+      border-radius: 3px;
+    }
+    .users-table-wrap::-webkit-scrollbar-thumb:hover {
+      background: var(--cyan);
+    }
+    .users-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .users-table thead th {
+      position: sticky;
+      top: 0;
+      background: #111823;
+      z-index: 10;
+      border-bottom: 1px solid var(--line-hi);
+      box-shadow: 0 1px 0 var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      font: 10px "JetBrains Mono", monospace;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+    .users-table tbody tr {
+      border-bottom: 1px solid rgba(37,45,58,.5);
+      transition: background .12s ease;
+    }
+    .users-table tbody tr:hover {
+      background: rgba(23,33,49,.2);
+    }
+    .users-table td {
+      vertical-align: top;
+      padding: 8px 10px;
+    }
+
+    /* Column 1: User & Identity styles */
+    .user-id-cell {
+      width: 230px;
+      box-sizing: border-box;
+      padding-right: 12px !important;
+    }
+    .user-id-top {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .user-name-title {
+      color: var(--cyan);
+      font: 600 12px "JetBrains Mono", monospace;
+      word-break: break-all;
+    }
+    .you-badge {
+      font: 9px "JetBrains Mono", monospace;
+      color: var(--muted);
+    }
+    .role-pill {
+      font: 8px "JetBrains Mono", monospace;
+      padding: 1px 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,.07);
+      color: var(--muted);
+    }
+    .role-pill.admin {
+      background: rgba(255,122,24,.15);
+      color: var(--orange);
+      border: 1px solid rgba(255,122,24,.4);
+    }
+    .user-email-box {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 5px;
+    }
+    .user-email-input {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 6px;
+      font-size: 10px;
+      height: 24px;
+    }
+    .save-email-btn {
+      padding: 3px 7px;
+      font-size: 9px;
+      height: 24px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .user-reg-date {
+      font-size: 9px;
+      color: var(--muted);
+    }
+
+    /* Column 2: Permissions Matrix */
+    .perms-cell {
+      width: auto;
+      min-width: 0;
+    }
+    .perm-matrix {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      width: 100%;
+    }
+    .perm-cat {
+      border: 1px solid var(--line);
+      background: rgba(12,18,28,.65);
+      padding: 5px 8px;
+      border-radius: 4px;
+    }
+    .perm-cat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(37,45,58,.5);
+      padding-bottom: 2px;
+    }
+    .perm-cat-title {
+      font: 9px "JetBrains Mono", monospace;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .perm-cat.system .perm-cat-title { color: var(--green); }
+    .perm-cat.roles .perm-cat-title { color: #b388ff; }
+    .perm-cat.custom .perm-cat-title { color: var(--cyan); }
+    .perm-cat.devices .perm-cat-title { color: var(--orange); }
+    .role-preset-btn {
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font: 8px "JetBrains Mono", monospace;
+      padding: 1px 4px;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: all .12s;
+    }
+    .role-preset-btn:hover {
+      border-color: var(--line-hi);
+      color: var(--text);
+      background: rgba(255,255,255,.1);
+    }
+    .role-preset-btn.admin:hover {
+      border-color: #b388ff;
+      color: #b388ff;
+    }
+    .perm-cat-badge {
+      font: 8px "JetBrains Mono", monospace;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255,255,255,.05);
+      color: var(--muted);
+    }
+    .permission-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      width: 100%;
+    }
+    .permission {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 6px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #0c121c;
+      font: 9px "JetBrains Mono", monospace;
+      cursor: pointer;
+      border-radius: 3px;
+      transition: all .12s ease;
+    }
+    .permission:hover {
+      border-color: var(--line-hi);
+      color: var(--text);
+    }
+    .permission.active {
+      color: var(--green);
+      border-color: rgba(56,217,150,.45);
+      background: rgba(56,217,150,.08);
+    }
+    .permission.custom-page {
+      border-style: dashed;
+    }
+    .permission.custom-page.active {
+      color: var(--cyan);
+      border-color: rgba(32,200,232,.45);
+      background: rgba(32,200,232,.08);
+    }
+    .permission.device {
+      border-color: rgba(255,122,24,.35);
+      background: rgba(255,122,24,.03);
+    }
+    .permission.device.active {
+      color: var(--orange);
+      border-color: rgba(255,122,24,.75);
+      background: rgba(255,122,24,.12);
+    }
+    .permission input {
+      width: 10px;
+      height: 10px;
+      accent-color: var(--green);
+    }
+    .permission.device input {
+      accent-color: var(--orange);
+    }
+    .permission.custom-page input {
+      accent-color: var(--cyan);
+    }
+    .permission.role-perm {
+      border-color: rgba(179,136,255,.35);
+      background: rgba(179,136,255,.03);
+    }
+    .permission.role-perm.active {
+      color: #b388ff;
+      border-color: rgba(179,136,255,.75);
+      background: rgba(179,136,255,.12);
+    }
+    .permission.role-perm input {
+      accent-color: #b388ff;
+    }
+    .save-permissions {
+      display: none;
+      margin-top: 6px;
+      padding: 4px 10px;
+      font-size: 10px;
+    }
+    .save-permissions.visible {
+      display: inline-block;
+    }
+
+    /* Aside Category Filter Styles (Natural compact height) */
+    .admin-layout > aside {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .filter-btn-group { display: flex; flex-direction: column; gap: 5px; }
+    .filter-tab-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      background: rgba(17,24,35,.7);
+      color: var(--muted);
+      font: 10px "JetBrains Mono", monospace;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all .15s ease;
+    }
+    .filter-tab-btn:hover { border-color: var(--line-hi); color: var(--text); background: rgba(23,33,49,.8); }
+    .filter-tab-btn.active {
+      border-color: var(--cyan);
+      background: rgba(32,200,232,.12);
+      color: var(--text);
+      font-weight: 600;
+    }
+    .filter-tab-btn[data-filter="system"].active {
+      border-color: var(--green);
+      background: rgba(56,217,150,.12);
+    }
+    .filter-tab-btn[data-filter="roles"].active {
+      border-color: #b388ff;
+      background: rgba(179,136,255,.12);
+    }
+    .filter-tab-btn[data-filter="devices"].active {
+      border-color: var(--orange);
+      background: rgba(255,122,24,.12);
+    }
+    .counter-badge {
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,.07);
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .filter-stats-card {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      background: rgba(10,14,23,.6);
+      border-radius: 4px;
+      display: grid;
+      gap: 5px;
+      margin-top: 4px;
+    }
+
+    /* Dynamic CSS Filters for the matrix */
+    #usersBody[data-filter="system"] .perm-cat:not(.system) { display: none !important; }
+    #usersBody[data-filter="roles"] .perm-cat:not(.roles) { display: none !important; }
+    #usersBody[data-filter="custom"] .perm-cat:not(.custom) { display: none !important; }
+    #usersBody[data-filter="devices"] .perm-cat:not(.devices) { display: none !important; }
     .page-form-grid { display:grid; grid-template-columns:1fr 1.2fr auto; gap:6px; margin-bottom:12px; }
     #toast { position:fixed; right:16px; bottom:16px; z-index:70; padding:9px 12px; border:1px solid var(--line-hi); background:#111823; color:var(--text); opacity:0; pointer-events:none; transition:opacity .2s; }
     #toast.show { opacity:1; } #toast.ok { color:var(--green); border-color:rgba(56,217,150,.5); } #toast.err { color:var(--red); border-color:rgba(255,89,100,.5); }
-    @media(max-width:850px) { .admin-layout { grid-template-columns:1fr; } .admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .page-form-grid { grid-template-columns:1fr; } }
+    @media(max-width:850px) {
+      .admin-layout { grid-template-columns:1fr; }
+      .admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .page-form-grid { grid-template-columns:1fr; }
+      .users-table-wrap { overflow-x: auto; }
+      .users-table { min-width: 620px; }
+    }
   </style>
 </head>
 <body>
@@ -42,10 +355,85 @@
     <section class="admin-stats"><article class="metric"><span class="metric-label">Identity store</span><strong class="metric-value green">ONLINE</strong></article><article class="metric"><span class="metric-label">Policy mode</span><strong class="metric-value cyan">RBAC</strong></article><article class="metric"><span class="metric-label">Session lock</span><strong class="metric-value orange">ACTIVE</strong></article><article class="metric"><span class="metric-label">Dynamic nav</span><strong id="navPagesCount" class="metric-value green">0 PAGES</strong></article></section>
     
     <div class="admin-layout">
-      <section class="panel"><header class="panel-head"><h2 class="panel-title">Users / permissions matrix</h2><span class="muted mono">LIVE DIRECTORY</span></header><div class="table-wrap"><table><thead><tr><th>User</th><th>Permissions</th><th>Registered Date</th><th>Actions</th></tr></thead><tbody id="usersBody"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></section>
+      <section class="panel users-matrix-panel">
+        <header class="panel-head">
+          <h2 class="panel-title">Users / permissions matrix</h2>
+          <span class="muted mono">LIVE DIRECTORY</span>
+        </header>
+        <div class="table-wrap users-table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th style="width: 230px;">USER &amp; IDENTITY</th>
+                <th>PERMISSIONS &amp; DEVICES</th>
+                <th style="width: 75px; text-align: right;">ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="usersBody">
+              <tr><td colspan="3" class="loading">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <aside class="dashboard-stack">
-        <section class="panel"><header class="panel-head"><h2 class="panel-title">Permission policy</h2></header><div class="panel-body" style="display:grid;gap:7px"><div class="policy-card green"><strong>VIEWER</strong><p>dashboard + node-red UI read access</p></div><div class="policy-card"><strong>OPERATOR</strong><p>MQTT logs and device telemetry</p></div><div class="policy-card orange"><strong>ADMIN</strong><p>users, grants, devices and editor</p></div></div></section>
-        <section class="panel"><header class="panel-head"><h2 class="panel-title">Audit feed</h2><span class="badge info">SECURE</span></header><div class="panel-body"><div class="audit-line"><span class="led" style="color:var(--green)"></span><b>Permission changes</b><span>IMMEDIATE</span></div><div class="audit-line"><span class="led" style="color:var(--cyan)"></span><b>Session validation</b><span>COOKIE</span></div><div class="audit-line"><span class="led" style="color:var(--orange)"></span><b>Self-lock guard</b><span>ACTIVE</span></div></div></section>
+        <section class="panel filter-panel">
+          <header class="panel-head">
+            <h2 class="panel-title">Permission Filters</h2>
+            <span id="activeFilterBadge" class="badge ok">ALL PERMISSIONS</span>
+          </header>
+          <div class="panel-body">
+            <div>
+              <span class="status-label" style="display:block;margin-bottom:6px">SHOW IN MATRIX:</span>
+              <div class="filter-btn-group">
+                <button class="filter-tab-btn active" data-filter="all" type="button">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span class="led" style="background:var(--text)"></span>
+                    <span>All Categories</span>
+                  </span>
+                  <small class="counter-badge" id="countAll">All</small>
+                </button>
+                <button class="filter-tab-btn" data-filter="system" type="button">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span class="led" style="background:var(--green)"></span>
+                    <span>1. System Pages</span>
+                  </span>
+                  <small class="counter-badge" id="countSystem">5</small>
+                </button>
+                <button class="filter-tab-btn" data-filter="roles" type="button">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span class="led" style="background:#b388ff"></span>
+                    <span>2. Roles &amp; Privileges</span>
+                  </span>
+                  <small class="counter-badge" id="countRoles">4</small>
+                </button>
+                <button class="filter-tab-btn" data-filter="custom" type="button">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span class="led" style="background:var(--cyan)"></span>
+                    <span>3. Custom Pages</span>
+                  </span>
+                  <small class="counter-badge" id="countCustom">0</small>
+                </button>
+                <button class="filter-tab-btn" data-filter="devices" type="button">
+                  <span style="display:flex;align-items:center;gap:6px">
+                    <span class="led" style="background:var(--orange)"></span>
+                    <span>4. Devices &amp; Sensors</span>
+                  </span>
+                  <small class="counter-badge" id="countDevices">0</small>
+                </button>
+              </div>
+            </div>
+
+            <div style="margin-top:6px">
+              <span class="status-label" style="display:block;margin-bottom:4px">QUICK SEARCH (USER / DEVICE):</span>
+              <input id="userSearchInput" class="control mono" placeholder="Filter by username, email or device..." style="font-size:11px;width:100%;box-sizing:border-box">
+            </div>
+
+            <div class="filter-stats-card">
+              <div class="status-row"><span class="status-label">FILTER MODE:</span><span id="filterModeLabel" class="status-value">FULL MATRIX</span></div>
+              <div class="status-row"><span class="status-label">MATCHED USERS:</span><span id="filterUsersCount" class="status-value">0</span></div>
+            </div>
+          </div>
+        </section>
       </aside>
     </div>
 
@@ -69,12 +457,13 @@
                 <th>Page Title</th>
                 <th>Path / Target URL</th>
                 <th>Permission Key</th>
-                <th>Created</th>
+                <th>Created By</th>
+                <th>Created Date</th>
                 <th style="width:90px">Action</th>
               </tr>
             </thead>
             <tbody id="navPagesBody">
-              <tr><td colspan="5" class="loading">Loading navigation pages…</td></tr>
+              <tr><td colspan="6" class="loading">Loading navigation pages…</td></tr>
             </tbody>
           </table>
         </div>
@@ -86,6 +475,18 @@
   <script>
   let currentUser = null;
   let dynamicNavPages = [];
+  let permissionsCatalog = { system: [], navPages: [], devices: [] };
+
+  async function loadCatalog() {
+    try {
+      const res = await fetch('/api/permissions/catalog');
+      if (res.ok) {
+        permissionsCatalog = await res.json();
+      }
+    } catch (e) {
+      console.warn('Failed to load permissions catalog', e);
+    }
+  }
 
   const basePermissionLabels = {
     'view:dashboard': 'Dashboard',
@@ -95,6 +496,7 @@
     'manage:users': 'Manage users',
     'grant:permissions': 'Grant permissions',
     'manage:devices': 'MQTT Devices',
+    'manage:navigation': 'Manage Navigation',
     'access:editor': 'Editor'
   };
 
@@ -127,14 +529,31 @@
     try {
       const response = await fetch('/api/nav-pages');
       if (!response.ok) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">Unable to load navigation pages</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">Unable to load navigation pages</td></tr>';
         return;
       }
       dynamicNavPages = await response.json();
       document.getElementById('navPagesCount').textContent = dynamicNavPages.length + ' PAGES';
       
+      const canManageNav = currentUser && (
+        (currentUser.permissions && currentUser.permissions.includes('manage:navigation')) ||
+        (currentUser.permissions && currentUser.permissions.includes('grant:permissions')) ||
+        currentUser.role === 'admin'
+      );
+
+      const addForm = document.getElementById('addPageForm');
+      if (addForm) {
+        addForm.style.opacity = canManageNav ? '1' : '0.6';
+        addForm.querySelectorAll('input, button').forEach(el => {
+          el.disabled = !canManageNav;
+          if (!canManageNav && el.tagName === 'BUTTON') {
+            el.title = "Requires 'manage:navigation' permission";
+          }
+        });
+      }
+
       if (!dynamicNavPages.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">No custom navigation pages added yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">No custom navigation pages added yet</td></tr>';
         return;
       }
 
@@ -145,8 +564,11 @@
             <td class="mono"><strong>${escHtml(page.title)}</strong></td>
             <td><a href="${escHtml(page.path)}" target="${isExt ? '_blank' : '_self'}" class="mono">${escHtml(page.path)}</a></td>
             <td><span class="badge info">${escHtml(page.permission_key)}</span></td>
+            <td><span class="mono" style="color:var(--cyan);font-size:11px;font-weight:600">${escHtml(page.createdBy || 'admin')}</span></td>
             <td class="date-cell">${formatDate(page.createdAt)}</td>
-            <td><button class="btn danger delete-page" data-id="${page.id}">DELETE</button></td>
+            <td>
+              ${canManageNav ? `<button class="btn danger delete-page" data-id="${page.id}">DELETE</button>` : '<span class="muted mono">—</span>'}
+            </td>
           </tr>
         `;
       }).join('');
@@ -175,7 +597,7 @@
         };
       });
     } catch {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">Network error loading pages</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Network error loading pages</td></tr>';
     }
   }
 
@@ -217,52 +639,191 @@
 
   async function renderUsers() {
     const tbody = document.getElementById('usersBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="loading">Loading directory…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="loading">Loading directory…</td></tr>';
+    await loadCatalog();
     const response = await fetch('/api/users');
-    if (!response.ok) { tbody.innerHTML = '<tr><td colspan="4" class="loading">Unable to load directory</td></tr>'; return; }
+    if (!response.ok) { tbody.innerHTML = '<tr><td colspan="3" class="loading">Unable to load directory</td></tr>'; return; }
     const users = await response.json();
     tbody.innerHTML = '';
-    if (!users.length) { tbody.innerHTML = '<tr><td colspan="4" class="loading">No users found</td></tr>'; return; }
-
-    const activeLabels = getActivePermissionLabels();
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="3" class="loading">No users found</td></tr>'; return; }
 
     users.forEach(user => {
       const isSelf = user.username === currentUser.username;
       const row = document.createElement('tr');
-      row.innerHTML = `<td class="username-cell">${escHtml(user.username)}${isSelf ? ' <span class="muted">(you)</span>' : ''}</td><td><div class="permission-list"></div><button class="btn primary save-permissions">SAVE PERMISSIONS</button></td><td class="date-cell">${formatDate(user.createdAt)}</td><td class="actions"></td>`;
-      const list = row.querySelector('.permission-list');
+      row.innerHTML = `
+        <td class="user-id-cell">
+          <div class="user-id-top">
+            <span class="user-name-title">${escHtml(user.username)}</span>
+            ${isSelf ? '<span class="you-badge">(you)</span>' : ''}
+            <span class="role-pill ${user.role === 'admin' ? 'admin' : ''}">${escHtml(user.role || 'user').toUpperCase()}</span>
+          </div>
+          <div class="user-email-box">
+            <input class="control mono user-email-input" placeholder="user@gmail.com" value="${escHtml(user.email || '')}" title="Link SWOLF Email">
+            <button class="btn secondary save-email-btn" type="button" title="Link SWOLF Email">LINK</button>
+          </div>
+          <div class="user-reg-date">
+            <span class="muted mono">Reg: ${formatDate(user.createdAt)}</span>
+          </div>
+        </td>
+        <td class="perms-cell">
+          <div class="perm-matrix">
+            <!-- 1. System Pages -->
+            <div class="perm-cat system">
+              <div class="perm-cat-header">
+                <span class="perm-cat-title">1. SYSTEM PAGES</span>
+                <span class="perm-cat-badge">${(permissionsCatalog.systemPages || []).length} PAGES</span>
+              </div>
+              <div class="permission-list system-perms"></div>
+            </div>
+
+            <!-- 2. Roles & Privileges -->
+            <div class="perm-cat roles">
+              <div class="perm-cat-header">
+                <span class="perm-cat-title">2. ROLES &amp; PRIVILEGES</span>
+                <div style="display:flex;align-items:center;gap:3px">
+                  <span class="muted mono" style="font-size:8px">PRESET:</span>
+                  <button type="button" class="role-preset-btn" data-role="user" title="Standard User preset (Dashboard only)">USER</button>
+                  <button type="button" class="role-preset-btn" data-role="viewer" title="SCADA Viewer preset (Node-RED UI)">VIEWER</button>
+                  <button type="button" class="role-preset-btn admin" data-role="admin" title="Full Admin preset">ADMIN</button>
+                </div>
+              </div>
+              <div class="permission-list role-perms"></div>
+            </div>
+
+            <!-- 3. Custom Navigation Pages -->
+            <div class="perm-cat custom">
+              <div class="perm-cat-header">
+                <span class="perm-cat-title">3. CUSTOM NAVIGATION PAGES</span>
+                <span class="perm-cat-badge">${(permissionsCatalog.navPages || []).length} PAGES</span>
+              </div>
+              <div class="permission-list custom-perms"></div>
+            </div>
+
+            <!-- 4. Devices & Sensors -->
+            <div class="perm-cat devices">
+              <div class="perm-cat-header">
+                <span class="perm-cat-title">4. MQTT DEVICES &amp; SENSORS</span>
+                <span class="perm-cat-badge">${(permissionsCatalog.devices || []).length} DEVICES</span>
+              </div>
+              <div class="permission-list device-perms"></div>
+            </div>
+          </div>
+          <button class="btn primary save-permissions">SAVE PERMISSIONS</button>
+        </td>
+        <td class="actions-cell" style="text-align: right; vertical-align: top;"></td>
+      `;
+      
+      const emailInput = row.querySelector('.user-email-input');
+      const saveEmailBtn = row.querySelector('.save-email-btn');
+      saveEmailBtn.addEventListener('click', async () => {
+        saveEmailBtn.disabled = true;
+        const newEmail = emailInput.value.trim();
+        try {
+          const res = await fetch(`/api/users/${encodeURIComponent(user.username)}/email`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: newEmail })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            showToast(data.error || 'Failed to update email', 'err');
+          } else {
+            showToast(`SWOLF Email linked for ${user.username}`, 'ok');
+          }
+        } catch {
+          showToast('Network error', 'err');
+        } finally {
+          saveEmailBtn.disabled = false;
+        }
+      });
+
+      const systemList = row.querySelector('.system-perms');
+      const roleList = row.querySelector('.role-perms');
+      const customList = row.querySelector('.custom-perms');
+      const deviceList = row.querySelector('.device-perms');
       const save = row.querySelector('.save-permissions');
       const selected = new Set(user.permissions || []);
 
-      Object.entries(activeLabels).forEach(([key, label]) => {
-        const isCustom = key.startsWith('view:page_');
+      function attachCheckbox(container, key, label, className = '') {
         const item = document.createElement('label');
-        item.className = 'permission' + (isCustom ? ' custom-page' : '') + (selected.has(key) ? ' active' : '');
+        item.className = 'permission ' + className + (selected.has(key) ? ' active' : '');
         item.innerHTML = `<input type="checkbox" data-key="${escHtml(key)}" ${selected.has(key) ? 'checked' : ''}>${escHtml(label)}`;
         item.querySelector('input').addEventListener('change', event => {
           item.classList.toggle('active', event.target.checked);
           save.classList.add('visible');
         });
-        list.appendChild(item);
+        container.appendChild(item);
+      }
+
+      // 1. Render System Pages
+      (permissionsCatalog.systemPages || []).forEach(p => {
+        attachCheckbox(systemList, p.key, p.label, '');
+      });
+
+      // 2. Render Roles & Privileges
+      (permissionsCatalog.roles || []).forEach(p => {
+        attachCheckbox(roleList, p.key, p.label, 'role-perm');
+      });
+
+      // 3. Render Custom pages
+      if (permissionsCatalog.navPages && permissionsCatalog.navPages.length) {
+        permissionsCatalog.navPages.forEach(p => {
+          attachCheckbox(customList, p.key, p.title, 'custom-page');
+        });
+      } else {
+        customList.innerHTML = '<span class="muted mono" style="font-size:9px">No custom navigation pages</span>';
+      }
+
+      // 4. Render Devices
+      if (permissionsCatalog.devices && permissionsCatalog.devices.length) {
+        permissionsCatalog.devices.forEach(d => {
+          attachCheckbox(deviceList, d.key, '📟 ' + d.label, 'device');
+        });
+      } else {
+        deviceList.innerHTML = '<span class="muted mono" style="font-size:9px">No registered MQTT devices</span>';
+      }
+
+      // Role preset buttons handler
+      row.querySelectorAll('.role-preset-btn').forEach(presetBtn => {
+        presetBtn.addEventListener('click', () => {
+          const preset = presetBtn.getAttribute('data-role');
+          const checkboxes = row.querySelectorAll('.perm-matrix input[type="checkbox"]');
+          checkboxes.forEach(cb => {
+            const key = cb.getAttribute('data-key');
+            let shouldCheck = false;
+            if (preset === 'user') {
+              shouldCheck = (key === 'view:dashboard');
+            } else if (preset === 'viewer') {
+              shouldCheck = (key === 'view:dashboard' || key === 'view:nodes_ui');
+            } else if (preset === 'admin') {
+              shouldCheck = !key.startsWith('device:');
+            }
+            cb.checked = shouldCheck;
+            cb.closest('label').classList.toggle('active', shouldCheck);
+          });
+          save.classList.add('visible');
+        });
       });
 
       save.addEventListener('click', () => {
-        const checkedKeys = Array.from(list.querySelectorAll('input:checked')).map(input => input.getAttribute('data-key'));
+        const checkedKeys = Array.from(row.querySelectorAll('.perm-matrix input:checked')).map(input => input.getAttribute('data-key'));
         savePermissions(user.username, checkedKeys, save);
       });
 
-      const actions = row.querySelector('.actions');
+      const actions = row.querySelector('.actions-cell');
       if (!isSelf) {
         const del = document.createElement('button');
         del.className = 'btn danger';
+        del.style.cssText = 'padding: 4px 8px; font-size: 9px;';
         del.textContent = 'DELETE';
         del.addEventListener('click', () => deleteUser(user.username, del));
         actions.appendChild(del);
       } else {
-        actions.innerHTML = '<span class="muted">—</span>';
+        actions.innerHTML = '<span class="muted mono" style="font-size:11px">—</span>';
       }
       tbody.appendChild(row);
     });
+    updateFilterCounters();
   }
 
   function escHtml(s) {
@@ -301,9 +862,89 @@
 
   (async () => {
     await loadMe();
+    await loadCatalog();
     await loadNavPages();
     await renderUsers();
+    setupAsideFilters();
   })();
+
+  function setupAsideFilters() {
+    const filterButtons = document.querySelectorAll('.filter-tab-btn');
+    const tbody = document.getElementById('usersBody');
+    const badge = document.getElementById('activeFilterBadge');
+    const modeLabel = document.getElementById('filterModeLabel');
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+
+        if (filter === 'all') {
+          tbody.removeAttribute('data-filter');
+          badge.textContent = 'ALL PERMISSIONS';
+          badge.className = 'badge ok';
+          modeLabel.textContent = 'FULL MATRIX';
+        } else if (filter === 'system') {
+          tbody.setAttribute('data-filter', 'system');
+          badge.textContent = '1. PAGES';
+          badge.className = 'badge ok';
+          modeLabel.textContent = 'SYSTEM PAGES ONLY';
+        } else if (filter === 'roles') {
+          tbody.setAttribute('data-filter', 'roles');
+          badge.textContent = '2. ROLES';
+          badge.className = 'badge warn';
+          modeLabel.textContent = 'ROLES & PRIVILEGES';
+        } else if (filter === 'custom') {
+          tbody.setAttribute('data-filter', 'custom');
+          badge.textContent = '3. CUSTOM';
+          badge.className = 'badge info';
+          modeLabel.textContent = 'CUSTOM PAGES';
+        } else if (filter === 'devices') {
+          tbody.setAttribute('data-filter', 'devices');
+          badge.textContent = '4. DEVICES';
+          badge.className = 'badge warn';
+          modeLabel.textContent = 'DEVICES ONLY';
+        }
+      });
+    });
+
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const query = searchInput.value.trim().toLowerCase();
+        const rows = tbody.querySelectorAll('tr');
+        let visibleCount = 0;
+        rows.forEach(row => {
+          const emailVal = row.querySelector('.user-email-input')?.value.toLowerCase() || '';
+          const text = row.textContent.toLowerCase() + ' ' + emailVal;
+          const match = !query || text.includes(query);
+          row.style.display = match ? '' : 'none';
+          if (match) visibleCount++;
+        });
+        document.getElementById('filterUsersCount').textContent = visibleCount;
+      });
+    }
+  }
+
+  function updateFilterCounters() {
+    if (document.getElementById('countSystem')) {
+      document.getElementById('countSystem').textContent = permissionsCatalog.systemPages ? permissionsCatalog.systemPages.length : 5;
+    }
+    if (document.getElementById('countRoles')) {
+      document.getElementById('countRoles').textContent = permissionsCatalog.roles ? permissionsCatalog.roles.length : 4;
+    }
+    if (document.getElementById('countCustom')) {
+      document.getElementById('countCustom').textContent = permissionsCatalog.navPages ? permissionsCatalog.navPages.length : 0;
+    }
+    if (document.getElementById('countDevices')) {
+      document.getElementById('countDevices').textContent = permissionsCatalog.devices ? permissionsCatalog.devices.length : 0;
+    }
+    const allUsers = document.querySelectorAll('#usersBody tr').length;
+    if (document.getElementById('filterUsersCount')) {
+      document.getElementById('filterUsersCount').textContent = allUsers;
+    }
+  }
 </script>
 </body>
 </html>
