@@ -392,40 +392,43 @@ function verifyJwtToken(token) {
 }
 
 function extractTokenFromRequest(req) {
-  if (!req) return null;
+  if (!req || !req.headers) return null;
 
-  // 1. Authorization header (case-insensitive)
-  const authHeader = req.headers && (req.headers.authorization || req.headers.Authorization);
+  // 1. Direct Authorization / HTTP_AUTHORIZATION headers (Apache / reverse-proxy safe)
+  const authHeader = req.headers.authorization ||
+                     req.headers.Authorization ||
+                     req.headers.http_authorization ||
+                     req.headers.HTTP_AUTHORIZATION ||
+                     req.headers['x-http-authorization'];
   if (authHeader && typeof authHeader === 'string') {
     const trimmed = authHeader.trim();
     if (/^bearer\s+/i.test(trimmed)) {
       return trimmed.replace(/^bearer\s+/i, '').trim();
     }
-    // Raw JWT format (3 parts separated by dots)
+    // Raw JWT format (3 base64url parts separated by dots)
     if (trimmed.split('.').length === 3) {
       return trimmed;
     }
   }
 
-  // 2. X-API-Key header (case-insensitive)
-  const apiKey = req.headers && (req.headers['x-api-key'] || req.headers['X-API-Key'] || req.headers['x-api-token']);
-  if (apiKey && typeof apiKey === 'string') {
-    const trimmed = apiKey.trim();
-    if (/^bearer\s+/i.test(trimmed)) {
+  // 2. Scan all incoming headers for any Bearer or raw JWT token (e.g. x-api-key, auth-token, etc.)
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (/^bearer\s+ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/i.test(trimmed)) {
       return trimmed.replace(/^bearer\s+/i, '').trim();
     }
-    if (trimmed.split('.').length === 3) {
+    if (/^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(trimmed)) {
       return trimmed;
     }
   }
 
-  // 3. Query string parameter (?token= or ?apiKey=)
+  // 3. Query string parameters (?token= or ?apiKey=)
   if (req.query) {
-    if (typeof req.query.token === 'string' && req.query.token.trim()) {
-      return req.query.token.trim();
-    }
-    if (typeof req.query.apiKey === 'string' && req.query.apiKey.trim()) {
-      return req.query.apiKey.trim();
+    for (const val of Object.values(req.query)) {
+      if (typeof val === 'string' && /^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(val.trim())) {
+        return val.trim();
+      }
     }
   }
 
@@ -980,7 +983,8 @@ app.get('/api/permissions/catalog', (req, res) => {
 app.get('/api/sensors', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
-    console.warn('[AUTH] /api/sensors: 401 Unauthorized (missing or invalid token)');
+    const receivedHeaders = Object.keys(req.headers).join(', ');
+    console.warn(`[AUTH] /api/sensors: 401 Unauthorized. Headers received by Node.js: [${receivedHeaders}]`);
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
