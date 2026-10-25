@@ -435,6 +435,20 @@ function extractTokenFromRequest(req) {
     }
   }
 
+  // 4. Cookies (e.g. token=ey... or jwt=ey...)
+  if (req.headers && req.headers.cookie) {
+    const cookies = req.headers.cookie.split(';');
+    for (const c of cookies) {
+      const parts = c.trim().split('=');
+      if (parts.length >= 2) {
+        const val = parts.slice(1).join('=').trim();
+        if (/^ey[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(val)) {
+          return val;
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -469,7 +483,13 @@ function authenticateUserFromToken(token) {
 
   // If user profile is linked by email/username in SQLite:
   if (user) {
-    return { ...user, isJwt: true, tokenData: verified };
+    const tokenDevs = Array.isArray(verified.devices)
+      ? verified.devices.map(d => (String(d).startsWith('device:') ? String(d) : `device:${d}`))
+      : (typeof verified.deviceId === 'string' && verified.deviceId ? [`device:${verified.deviceId}`] : []);
+    const mergedPerms = tokenDevs.length > 0
+      ? Array.from(new Set([...user.permissions, ...tokenDevs]))
+      : user.permissions;
+    return { ...user, permissions: mergedPerms, isJwt: true, tokenData: verified };
   }
 
   // If valid token issued by SWOLF Auth with Admin role:
@@ -987,7 +1007,8 @@ app.get('/api/sensors', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
     const rawAuth = req.headers.authorization || req.headers.Authorization || '(none)';
-    console.warn(`[AUTH] /api/sensors: 401 Unauthorized. rawAuth = [${rawAuth}]`);
+    const headerKeys = Object.keys(req.headers || {}).join(', ');
+    console.warn(`[AUTH] /api/sensors: 401 Unauthorized. rawAuth = [${rawAuth}], headersReceived = [${headerKeys}]`);
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
