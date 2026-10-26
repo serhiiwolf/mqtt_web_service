@@ -343,19 +343,24 @@ function clipPayload(payload, maxLen = 200) {
   return asString.length > maxLen ? `${asString.slice(0, maxLen)}…` : asString;
 }
 
-// ── JWT verification helper (HS256 matching SWOLF Auth) ────────────────────────
+// ── JWT verification & signing helpers (HS256 via process.env.JWT_SECRET) ─────
+function signJwtToken(payload) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET is not configured in environment');
+  const headerB64 = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signatureB64 = crypto.createHmac('sha256', secret)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest('base64url');
+  return `${headerB64}.${payloadB64}.${signatureB64}`;
+}
+
 function verifyJwtToken(token) {
   if (!token || typeof token !== 'string') return null;
-  const secretsToTry = [];
-  if (process.env.JWT_SECRET) secretsToTry.push(process.env.JWT_SECRET);
-  if (!secretsToTry.includes('7107639bfb14d81191ad4cb0c728285bbef811f309bceda39ab890c5612020af')) {
-    secretsToTry.push('7107639bfb14d81191ad4cb0c728285bbef811f309bceda39ab890c5612020af');
-  }
-  if (!secretsToTry.includes('swolf-auth-secret-key-2026')) {
-    secretsToTry.push('swolf-auth-secret-key-2026');
-  }
-  if (!isProd && !secretsToTry.includes('dev-change-me-jwt-secret')) {
-    secretsToTry.push('dev-change-me-jwt-secret');
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    console.warn('[AUTH] JWT_SECRET is not set in environment.');
+    return null;
   }
 
   try {
@@ -367,22 +372,18 @@ function verifyJwtToken(token) {
     const [headerB64, payloadB64, signatureB64] = parts;
     const cleanSig = signatureB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    let verifiedPayload = null;
-    for (const secret of secretsToTry) {
-      const expectedSignature = crypto.createHmac('sha256', secret)
-        .update(`${headerB64}.${payloadB64}`)
-        .digest('base64url');
-      if (expectedSignature === cleanSig) {
-        verifiedPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-        break;
-      }
-    }
+    const expectedSignature = crypto.createHmac('sha256', secret)
+      .update(`${headerB64}.${payloadB64}`)
+      .digest('base64url');
 
-    if (!verifiedPayload) {
+    const sigBuf = Buffer.from(cleanSig);
+    const expBuf = Buffer.from(expectedSignature);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       console.warn('[AUTH] JWT signature mismatch.');
       return null;
     }
 
+    const verifiedPayload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
     if (verifiedPayload.exp && Date.now() >= verifiedPayload.exp * 1000) {
       console.warn('[AUTH] JWT expired at', new Date(verifiedPayload.exp * 1000).toISOString());
       return null;
@@ -1006,6 +1007,42 @@ app.get('/api/permissions/catalog', (req, res) => {
 });
 
 // ── Sensors / Telemetry API (Mobile App & SCADA) ──────────────────────────────
+app.post('/api/auth/mobile-token', (req, res) => {
+  const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'Valid email is required' });
+  }
+  const user = getUserByEmail(email);
+  if (!user) {
+    return res.status(403).json({ success: false, error: 'User with this email is not registered' });
+  }
+  try {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const token = signJwtToken({
+      sub: user.username,
+      username: user.username,
+      name: name || user.username,
+      email: user.email,
+      role: user.role,
+      iat: nowSec,
+      exp: nowSec + 7 * 24 * 60 * 60
+    });
+    res.json({
+      success: true,
+      token,
+      user: {
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    console.error('[AUTH] Failed to sign mobile token:', err.message);
+    res.status(500).json({ success: false, error: 'Server JWT configuration error' });
+  }
+});
+
 app.get('/api/sensors', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
